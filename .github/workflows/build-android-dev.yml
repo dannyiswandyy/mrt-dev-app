@@ -4153,6 +4153,7 @@ jobs:
                               if (handle == null || !handle.matches("@[A-Za-z0-9._-]{3,30}")) throw new SecurityException("Bad channel");
                               String page = youtubeText("https://www.youtube.com/" + handle + "/live", 6_000_000);
                               String video = firstMatch(page, "<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([A-Za-z0-9_-]{11})\"");
+                              if (video == null) video = firstMatch(page, "\"videoDetails\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"");   // YouTube sometimes leaves the canonical link out
                               String channel = firstMatch(page, "\"(?:externalId|channelId)\":\"(UC[A-Za-z0-9_-]{22})\"");
                               boolean live = video != null && (page.contains("\"isLiveNow\":true") || page.contains("\"isLive\":true"));
                               out.put("video", video == null ? "" : video);
@@ -4551,7 +4552,7 @@ jobs:
                   try {
                       c.setConnectTimeout(10000);
                       c.setReadTimeout(20000);
-                      c.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
+                      c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36");
                       c.setRequestProperty("Accept-Language", "en-SG,en;q=0.9");
                       c.setRequestProperty("Cookie", "SOCS=CAI; CONSENT=YES+");   // skips the cookie-consent page some countries get
                       if (c.getResponseCode() != 200) throw new java.io.IOException("YouTube returned " + c.getResponseCode());

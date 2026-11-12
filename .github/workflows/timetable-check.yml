@@ -1,0 +1,47 @@
+# Checks the trains-in-service and headway figures packed into the dev app page.
+# It does not build an apk and it does not publish anything.
+name: Timetable checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Extract the app page
+        run: |
+          python3 - << 'PY'
+          import base64, lzma, pathlib, re, os
+          src = pathlib.Path(".github/workflows/build-android-dev.yml").read_text()
+          match = re.search(
+              r"base64 -d <<'MRTAPP_EOF' \| xz -d > 'mrt-tracker-app/app/src/main/assets/index.html'\n(.*?)\n          MRTAPP_EOF",
+              src,
+              re.S,
+          )
+          if not match:
+              raise SystemExit("The embedded index.html block was not found in build-android-dev.yml.")
+          body = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in match.group(1).splitlines()
+          )
+          html = lzma.decompress(base64.b64decode(body))
+          out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "index.html"
+          out.write_bytes(html)
+          with pathlib.Path(os.environ["GITHUB_ENV"]).open("a") as env:
+              env.write(f"MRT_INDEX={out}\n")
+          print(f"Extracted {len(html)} bytes")
+          PY
+
+      - name: Check trains in service and headways
+        run: node --test tests/timetable.test.mjs

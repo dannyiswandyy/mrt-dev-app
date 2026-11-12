@@ -27,9 +27,9 @@ When LTA's timetable isn't available for a line, the app estimates trains from h
 - **Train run number roster sheet:** the [NSEWL roster sheet](https://docs.google.com/spreadsheets/d/1O65RS9SMggfmGiQh7gCNQU-1l7l1sV0q85euH3gIAwQ/edit) gives the same weekday totals. It also supplies the short trips:
   - About one in 7 North-South Line trains in the weekday morning peak turn back at Yishun.
   - Outside the peaks, every other East-West Line train towards Tuas Link ends at Joo Koon.
-- **Downtown Line:** only partial run lists so far, so it keeps its usual gaps.
+- **Downtown Line:** counts only the runs on the lists Danny sent: weekdays 3 Nov 2026, Saturdays and Sundays 1 Nov 2026, public holidays 9 Nov 2026. The lists have no late-night marks, so full-day runs are taken as running until the last trains, and peak runs stop at 8pm.
 - **Thomson-East Coast Sundays and public holidays:** those rosters have no late-night marks. Full-day trains run until the last trains, and PM trains stop around 8pm.
-- **Updating counts:** the counts and short trips live in `NSL_TRAINS`, `EWL_TRAINS`, `CG_TRAINS`, `NEL_TRAINS`, `TEL_TRAINS`, `CCL_TRAINS` and `SHORT_PEAK` in the app page.
+- **Updating counts:** the counts and short trips live in `NSL_TRAINS`, `EWL_TRAINS`, `CG_TRAINS`, `NEL_TRAINS`, `TEL_TRAINS`, `CCL_TRAINS`, `DTL_TRAINS` and `SHORT_PEAK` in the app page.
 - **Extended-service nights:** these are in `EXT_DAYS` and `EXT_LAST`. Add the date and each line's later last trains.
 
 The public MRT Tracker app and website use the same counts.

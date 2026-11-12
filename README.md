@@ -10,6 +10,7 @@ Private Android app for Danny's own testing. It is separate from the public MRT 
 - **Driving mode** — drive a train on the app's routes.
 - **Live-cam spotting** — the Live cam train-spotting panel watches the RailCam stream and can correct North-South Line times.
 - **Google Routes timing compare** — compares the next LTA timetable departure with Google Maps transit routing (Routes API).
+- **Orange app icon** — the same train-front icon as MRT Tracker, on an orange (#E86E00) background so the dev app is easy to tell apart.
 
 ## Train counts and timetable estimates
 

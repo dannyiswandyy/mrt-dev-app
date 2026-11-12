@@ -117,7 +117,7 @@ jobs:
               defaultConfig {
                   applicationId channel == 'dev' ? 'sg.mrttracker.app.dev' : 'sg.mrttracker.app'
                   resValue 'string', 'app_name', channel == 'dev' ? 'MRT Dev' : 'MRT Tracker'
-                  resValue 'color', 'icon_bg', channel == 'dev' ? '#C2410C' : '#14181D'
+                  resValue 'color', 'icon_bg', channel == 'dev' ? '#E86E00' : '#0A0E14'
                   buildConfigField 'String', 'CHANNEL', '"' + channel + '"'
                   minSdk 24
                   targetSdk 34
@@ -5027,11 +5027,12 @@ jobs:
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp" android:height="108dp"
               android:viewportWidth="108" android:viewportHeight="108">
-              <path android:fillColor="#D42E12" android:pathData="M38,30h32a8,8 0,0 1,8 8v30a8,8 0,0 1,-8 8h-32a8,8 0,0 1,-8 -8v-30a8,8 0,0 1,8 -8z"/>
-              <path android:fillColor="#FFFFFF" android:pathData="M38,37h32a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2h-32a2,2 0,0 1,-2 -2v-12a2,2 0,0 1,2 -2z"/>
-              <path android:fillColor="#FFF6C2" android:pathData="M42,64m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
-              <path android:fillColor="#FFF6C2" android:pathData="M66,64m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
-              <path android:fillColor="#FFFFFF" android:pathData="M40,78h6l-4,6h-6z M62,78h6l4,6h-6z"/>
+              <path android:fillColor="#E9EEF4" android:pathData="M41.67,29.02H66.41A7.06,7.06 0,0 1 73.47,36.08V66.26A7.06,7.06 0,0 1 66.41,73.32H41.67A7.06,7.06 0,0 1 34.61,66.26V36.08A7.06,7.06 0,0 1 41.67,29.02Z"/>
+              <path android:fillColor="#1D2A36" android:pathData="M39.26,35.23H68.82V51.6H39.26Z"/>
+              <path android:fillColor="#E4002B" android:pathData="M34.61,57.72H73.47V60.83H34.61Z"/>
+              <path android:fillColor="#00A650" android:pathData="M34.61,60.83H73.47V63.23H34.61Z"/>
+              <path android:fillColor="#FFD65A" android:pathData="M38.48,68.47A2.99,2.99 0,1 1 44.46,68.47A2.99,2.99 0,1 1 38.48,68.47ZM63.62,68.47A2.99,2.99 0,1 1 69.59,68.47A2.99,2.99 0,1 1 63.62,68.47Z"/>
+              <path android:fillColor="#E9EEF4" android:pathData="M43.76,74.79L49.27,74.79L43,82.63L37.49,82.63ZM58.73,74.79L64.24,74.79L70.51,82.63L65,82.63Z"/>
           </vector>
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/res/drawable'
@@ -5040,12 +5041,13 @@ jobs:
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="48dp" android:height="48dp"
               android:viewportWidth="108" android:viewportHeight="108">
-              <path android:fillColor="@color/icon_bg" android:pathData="M24,6h60a18,18 0,0 1,18 18v60a18,18 0,0 1,-18 18h-60a18,18 0,0 1,-18 -18v-60a18,18 0,0 1,18 -18z"/>
-              <path android:fillColor="#D42E12" android:pathData="M38,30h32a8,8 0,0 1,8 8v30a8,8 0,0 1,-8 8h-32a8,8 0,0 1,-8 -8v-30a8,8 0,0 1,8 -8z"/>
-              <path android:fillColor="#FFFFFF" android:pathData="M38,37h32a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2h-32a2,2 0,0 1,-2 -2v-12a2,2 0,0 1,2 -2z"/>
-              <path android:fillColor="#FFF6C2" android:pathData="M42,64m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
-              <path android:fillColor="#FFF6C2" android:pathData="M66,64m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
-              <path android:fillColor="#FFFFFF" android:pathData="M40,78h6l-4,6h-6z M62,78h6l4,6h-6z"/>
+              <path android:fillColor="@color/icon_bg" android:pathData="M26.72,6H81.28A20.72,20.72 0,0 1 102,26.72V81.28A20.72,20.72 0,0 1 81.28,102H26.72A20.72,20.72 0,0 1 6,81.28V26.72A20.72,20.72 0,0 1 26.72,6Z"/>
+              <path android:fillColor="#E9EEF4" android:pathData="M39.09,23.81H69A8.53,8.53 0,0 1 77.53,32.34V68.81A8.53,8.53 0,0 1 69,77.34H39.09A8.53,8.53 0,0 1 30.56,68.81V32.34A8.53,8.53 0,0 1 39.09,23.81Z"/>
+              <path android:fillColor="#1D2A36" android:pathData="M36.19,31.31H71.91V51.09H36.19Z"/>
+              <path android:fillColor="#E4002B" android:pathData="M30.56,58.5H77.53V62.25H30.56Z"/>
+              <path android:fillColor="#00A650" android:pathData="M30.56,62.25H77.53V65.16H30.56Z"/>
+              <path android:fillColor="#FFD65A" android:pathData="M35.25,71.48A3.61,3.61 0,1 1 42.47,71.48A3.61,3.61 0,1 1 35.25,71.48ZM65.62,71.48A3.61,3.61 0,1 1 72.84,71.48A3.61,3.61 0,1 1 65.62,71.48Z"/>
+              <path android:fillColor="#E9EEF4" android:pathData="M41.62,79.12L48.28,79.12L40.71,88.59L34.05,88.59ZM59.72,79.12L66.38,79.12L73.95,88.59L67.29,88.59Z"/>
           </vector>
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/res/drawable'

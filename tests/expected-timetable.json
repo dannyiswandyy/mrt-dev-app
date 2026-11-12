@@ -1,0 +1,836 @@
+{
+  "frozenIso": "2026-11-12",
+  "days": {
+    "weekday": {
+      "iso": "2026-11-12",
+      "dow": 4,
+      "day": "wd"
+    },
+    "saturday": {
+      "iso": "2026-10-31",
+      "dow": 6,
+      "day": "sat"
+    },
+    "sunday": {
+      "iso": "2026-11-01",
+      "dow": 0,
+      "day": "sun"
+    },
+    "publicHoliday": {
+      "iso": "2026-11-09",
+      "dow": 1,
+      "day": "ph"
+    },
+    "holidayEve": {
+      "iso": "2026-11-07",
+      "dow": 6,
+      "day": "ext:2026-11-07:sat"
+    }
+  },
+  "lines": {
+    "NSL": {
+      "weekday": [
+        {
+          "from": 0,
+          "count": 31,
+          "t": 210,
+          "headway": 4.7742
+        },
+        {
+          "from": 420,
+          "count": 69,
+          "t": 495,
+          "headway": 2.1449
+        },
+        {
+          "from": 570,
+          "count": 31,
+          "t": 705,
+          "headway": 4.7742
+        },
+        {
+          "from": 840,
+          "count": 29,
+          "t": 930,
+          "headway": 5.1034
+        },
+        {
+          "from": 1020,
+          "count": 67,
+          "t": 1110,
+          "headway": 2.209
+        },
+        {
+          "from": 1200,
+          "count": 37,
+          "t": 1320,
+          "headway": 4
+        }
+      ],
+      "saturday": [
+        {
+          "from": 0,
+          "count": 35,
+          "t": 210,
+          "headway": 4.2286
+        },
+        {
+          "from": 420,
+          "count": 37,
+          "t": 495,
+          "headway": 4
+        },
+        {
+          "from": 570,
+          "count": 35,
+          "t": 705,
+          "headway": 4.2286
+        },
+        {
+          "from": 840,
+          "count": 28,
+          "t": 930,
+          "headway": 5.2857
+        },
+        {
+          "from": 1020,
+          "count": 39,
+          "t": 1110,
+          "headway": 3.7949
+        },
+        {
+          "from": 1200,
+          "count": 36,
+          "t": 1320,
+          "headway": 4.1111
+        }
+      ],
+      "sunday": [
+        {
+          "from": 0,
+          "count": 35,
+          "t": 210,
+          "headway": 4.2286
+        },
+        {
+          "from": 420,
+          "count": 39,
+          "t": 495,
+          "headway": 3.7949
+        },
+        {
+          "from": 570,
+          "count": 35,
+          "t": 705,
+          "headway": 4.2286
+        },
+        {
+          "from": 840,
+          "count": 28,
+          "t": 930,
+          "headway": 5.2857
+        },
+        {
+          "from": 1020,
+          "count": 38,
+          "t": 1110,
+          "headway": 3.8947
+        },
+        {
+          "from": 1200,
+          "count": 35,
+          "t": 1320,
+          "headway": 4.2286
+        }
+      ],
+      "publicHoliday": [
+        {
+          "from": 0,
+          "count": 35,
+          "t": 210,
+          "headway": 4.2286
+        },
+        {
+          "from": 420,
+          "count": 39,
+          "t": 495,
+          "headway": 3.7949
+        },
+        {
+          "from": 570,
+          "count": 35,
+          "t": 705,
+          "headway": 4.2286
+        },
+        {
+          "from": 840,
+          "count": 28,
+          "t": 930,
+          "headway": 5.2857
+        },
+        {
+          "from": 1020,
+          "count": 38,
+          "t": 1110,
+          "headway": 3.8947
+        },
+        {
+          "from": 1200,
+          "count": 35,
+          "t": 1320,
+          "headway": 4.2286
+        }
+      ],
+      "holidayEve": [
+        {
+          "from": 0,
+          "count": 35,
+          "t": 210,
+          "headway": 4.2286
+        },
+        {
+          "from": 420,
+          "count": 37,
+          "t": 495,
+          "headway": 4
+        },
+        {
+          "from": 570,
+          "count": 35,
+          "t": 705,
+          "headway": 4.2286
+        },
+        {
+          "from": 840,
+          "count": 28,
+          "t": 930,
+          "headway": 5.2857
+        },
+        {
+          "from": 1020,
+          "count": 39,
+          "t": 1110,
+          "headway": 3.7949
+        },
+        {
+          "from": 1200,
+          "count": 37,
+          "t": 1290,
+          "headway": 4
+        },
+        {
+          "from": 1380,
+          "count": 36,
+          "t": 1373,
+          "headway": 4.1111
+        }
+      ]
+    },
+    "EWL": {
+      "weekday": [
+        {
+          "from": 0,
+          "count": 32,
+          "t": 210,
+          "headway": 5.3813
+        },
+        {
+          "from": 420,
+          "count": 73,
+          "t": 495,
+          "headway": 2.3589
+        },
+        {
+          "from": 570,
+          "count": 32,
+          "t": 705,
+          "headway": 5.3813
+        },
+        {
+          "from": 840,
+          "count": 31,
+          "t": 930,
+          "headway": 5.5548
+        },
+        {
+          "from": 1020,
+          "count": 68,
+          "t": 1110,
+          "headway": 2.5324
+        },
+        {
+          "from": 1200,
+          "count": 42,
+          "t": 1320,
+          "headway": 4.1
+        }
+      ],
+      "saturday": [
+        {
+          "from": 0,
+          "count": 31,
+          "t": 210,
+          "headway": 5.5548
+        },
+        {
+          "from": 420,
+          "count": 32,
+          "t": 495,
+          "headway": 5.3813
+        },
+        {
+          "from": 570,
+          "count": 32,
+          "t": 795,
+          "headway": 5.3813
+        },
+        {
+          "from": 1020,
+          "count": 43,
+          "t": 1110,
+          "headway": 4.0047
+        },
+        {
+          "from": 1200,
+          "count": 42,
+          "t": 1320,
+          "headway": 4.1
+        }
+      ],
+      "sunday": [
+        {
+          "from": 0,
+          "count": 40,
+          "t": 210,
+          "headway": 4.305
+        },
+        {
+          "from": 420,
+          "count": 44,
+          "t": 495,
+          "headway": 3.9136
+        },
+        {
+          "from": 570,
+          "count": 41,
+          "t": 705,
+          "headway": 4.2
+        },
+        {
+          "from": 840,
+          "count": 32,
+          "t": 930,
+          "headway": 5.3813
+        },
+        {
+          "from": 1020,
+          "count": 46,
+          "t": 1110,
+          "headway": 3.7435
+        },
+        {
+          "from": 1200,
+          "count": 41,
+          "t": 1320,
+          "headway": 4.2
+        }
+      ],
+      "publicHoliday": [
+        {
+          "from": 0,
+          "count": 40,
+          "t": 210,
+          "headway": 4.305
+        },
+        {
+          "from": 420,
+          "count": 44,
+          "t": 495,
+          "headway": 3.9136
+        },
+        {
+          "from": 570,
+          "count": 41,
+          "t": 705,
+          "headway": 4.2
+        },
+        {
+          "from": 840,
+          "count": 32,
+          "t": 930,
+          "headway": 5.3813
+        },
+        {
+          "from": 1020,
+          "count": 46,
+          "t": 1110,
+          "headway": 3.7435
+        },
+        {
+          "from": 1200,
+          "count": 41,
+          "t": 1320,
+          "headway": 4.2
+        }
+      ],
+      "holidayEve": [
+        {
+          "from": 0,
+          "count": 40,
+          "t": 210,
+          "headway": 4.305
+        },
+        {
+          "from": 420,
+          "count": 44,
+          "t": 495,
+          "headway": 3.9136
+        },
+        {
+          "from": 570,
+          "count": 41,
+          "t": 705,
+          "headway": 4.2
+        },
+        {
+          "from": 840,
+          "count": 32,
+          "t": 930,
+          "headway": 5.3813
+        },
+        {
+          "from": 1020,
+          "count": 46,
+          "t": 1110,
+          "headway": 3.7435
+        },
+        {
+          "from": 1200,
+          "count": 45,
+          "t": 1290,
+          "headway": 3.8267
+        },
+        {
+          "from": 1380,
+          "count": 41,
+          "t": 1366.95,
+          "headway": 4.2
+        }
+      ]
+    },
+    "CG": {
+      "weekday": [
+        {
+          "from": 0,
+          "count": 2,
+          "t": 510,
+          "headway": 9.1
+        },
+        {
+          "from": 1020,
+          "count": 3,
+          "t": 1110,
+          "headway": 6.0667
+        },
+        {
+          "from": 1200,
+          "count": 2,
+          "t": 1320,
+          "headway": 9.1
+        }
+      ],
+      "saturday": [
+        {
+          "from": 0,
+          "count": 2,
+          "t": 510,
+          "headway": 9.1
+        },
+        {
+          "from": 1020,
+          "count": 3,
+          "t": 1110,
+          "headway": 6.0667
+        },
+        {
+          "from": 1200,
+          "count": 2,
+          "t": 1320,
+          "headway": 9.1
+        }
+      ],
+      "sunday": [
+        {
+          "from": 0,
+          "count": 2,
+          "t": 510,
+          "headway": 9.1
+        },
+        {
+          "from": 1020,
+          "count": 3,
+          "t": 1110,
+          "headway": 6.0667
+        },
+        {
+          "from": 1200,
+          "count": 2,
+          "t": 1320,
+          "headway": 9.1
+        }
+      ],
+      "publicHoliday": [
+        {
+          "from": 0,
+          "count": 2,
+          "t": 510,
+          "headway": 9.1
+        },
+        {
+          "from": 1020,
+          "count": 3,
+          "t": 1110,
+          "headway": 6.0667
+        },
+        {
+          "from": 1200,
+          "count": 2,
+          "t": 1320,
+          "headway": 9.1
+        }
+      ],
+      "holidayEve": [
+        {
+          "from": 0,
+          "count": 2,
+          "t": 510,
+          "headway": 9.1
+        },
+        {
+          "from": 1020,
+          "count": 3,
+          "t": 1110,
+          "headway": 6.0667
+        },
+        {
+          "from": 1200,
+          "count": 2,
+          "t": 1320,
+          "headway": 9.1
+        }
+      ]
+    },
+    "NEL": {
+      "weekday": [
+        {
+          "from": 0,
+          "count": 14,
+          "t": 210,
+          "headway": 5.3857
+        },
+        {
+          "from": 420,
+          "count": 40,
+          "t": 495,
+          "headway": 1.885
+        },
+        {
+          "from": 570,
+          "count": 14,
+          "t": 795,
+          "headway": 5.3857
+        },
+        {
+          "from": 1020,
+          "count": 36,
+          "t": 1110,
+          "headway": 2.0944
+        },
+        {
+          "from": 1200,
+          "count": 15,
+          "t": 1320,
+          "headway": 5.0267
+        }
+      ],
+      "saturday": [
+        {
+          "from": 0,
+          "count": 15,
+          "t": 510,
+          "headway": 5.0267
+        },
+        {
+          "from": 1020,
+          "count": 19,
+          "t": 1230,
+          "headway": 3.9684
+        }
+      ],
+      "sunday": [
+        {
+          "from": 0,
+          "count": 15,
+          "t": 510,
+          "headway": 5.0267
+        },
+        {
+          "from": 1020,
+          "count": 19,
+          "t": 1230,
+          "headway": 3.9684
+        }
+      ],
+      "publicHoliday": [
+        {
+          "from": 0,
+          "count": 15,
+          "t": 510,
+          "headway": 5.0267
+        },
+        {
+          "from": 1020,
+          "count": 19,
+          "t": 1230,
+          "headway": 3.9684
+        }
+      ],
+      "holidayEve": [
+        {
+          "from": 0,
+          "count": 15,
+          "t": 510,
+          "headway": 5.0267
+        },
+        {
+          "from": 1020,
+          "count": 19,
+          "t": 1230,
+          "headway": 3.9684
+        }
+      ]
+    },
+    "CCL": {
+      "weekday": [
+        {
+          "from": 0,
+          "count": 33,
+          "t": 210,
+          "headway": 4.7212
+        },
+        {
+          "from": 420,
+          "count": 73,
+          "t": 495,
+          "headway": 2.1342
+        },
+        {
+          "from": 570,
+          "count": 33,
+          "t": 795,
+          "headway": 4.7212
+        },
+        {
+          "from": 1020,
+          "count": 73,
+          "t": 1110,
+          "headway": 2.1342
+        },
+        {
+          "from": 1200,
+          "count": 44,
+          "t": 1320,
+          "headway": 3.5409
+        }
+      ],
+      "saturday": [
+        {
+          "from": 0,
+          "count": 35,
+          "t": 210,
+          "headway": 4.4514
+        },
+        {
+          "from": 420,
+          "count": 40,
+          "t": 495,
+          "headway": 3.895
+        },
+        {
+          "from": 570,
+          "count": 35,
+          "t": 1005,
+          "headway": 4.4514
+        }
+      ],
+      "sunday": [
+        {
+          "from": 0,
+          "count": 28,
+          "t": 510,
+          "headway": 5.5643
+        },
+        {
+          "from": 1020,
+          "count": 33,
+          "t": 1110,
+          "headway": 4.7212
+        },
+        {
+          "from": 1200,
+          "count": 11,
+          "t": 1320,
+          "headway": 14.1636
+        }
+      ],
+      "publicHoliday": [
+        {
+          "from": 0,
+          "count": 18,
+          "t": 510,
+          "headway": 8.6556
+        },
+        {
+          "from": 1020,
+          "count": 19,
+          "t": 1230,
+          "headway": 8.2
+        }
+      ],
+      "holidayEve": [
+        {
+          "from": 0,
+          "count": 35,
+          "t": 210,
+          "headway": 4.4514
+        },
+        {
+          "from": 420,
+          "count": 40,
+          "t": 495,
+          "headway": 3.895
+        },
+        {
+          "from": 570,
+          "count": 35,
+          "t": 1005,
+          "headway": 4.4514
+        }
+      ]
+    },
+    "TEL": {
+      "weekday": [
+        {
+          "from": 0,
+          "count": 22,
+          "t": 210,
+          "headway": 5.3727
+        },
+        {
+          "from": 420,
+          "count": 46,
+          "t": 495,
+          "headway": 2.5696
+        },
+        {
+          "from": 570,
+          "count": 22,
+          "t": 795,
+          "headway": 5.3727
+        },
+        {
+          "from": 1020,
+          "count": 45,
+          "t": 1110,
+          "headway": 2.6267
+        },
+        {
+          "from": 1200,
+          "count": 23,
+          "t": 1320,
+          "headway": 5.1391
+        }
+      ],
+      "saturday": [
+        {
+          "from": 0,
+          "count": 23,
+          "t": 510,
+          "headway": 5.1391
+        },
+        {
+          "from": 1020,
+          "count": 46,
+          "t": 1110,
+          "headway": 2.5696
+        },
+        {
+          "from": 1200,
+          "count": 40,
+          "t": 1320,
+          "headway": 2.955
+        }
+      ],
+      "sunday": [
+        {
+          "from": 0,
+          "count": 23,
+          "t": 510,
+          "headway": 5.1391
+        },
+        {
+          "from": 1020,
+          "count": 29,
+          "t": 1110,
+          "headway": 4.0759
+        },
+        {
+          "from": 1200,
+          "count": 23,
+          "t": 1320,
+          "headway": 5.1391
+        }
+      ],
+      "publicHoliday": [
+        {
+          "from": 0,
+          "count": 23,
+          "t": 510,
+          "headway": 5.1391
+        },
+        {
+          "from": 1020,
+          "count": 46,
+          "t": 1110,
+          "headway": 2.5696
+        },
+        {
+          "from": 1200,
+          "count": 23,
+          "t": 1320,
+          "headway": 5.1391
+        }
+      ],
+      "holidayEve": [
+        {
+          "from": 0,
+          "count": 22,
+          "t": 510,
+          "headway": 5.3727
+        },
+        {
+          "from": 1020,
+          "count": 44,
+          "t": 1110,
+          "headway": 2.6864
+        },
+        {
+          "from": 1200,
+          "count": 39,
+          "t": 1320,
+          "headway": 3.0308
+        }
+      ]
+    }
+  }
+}

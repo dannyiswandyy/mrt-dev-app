@@ -35,6 +35,10 @@ When LTA's timetable isn't available for a line, the app estimates trains from h
 
 The public MRT Tracker app and website use the same counts.
 
+## Timetable checks
+
+`.github/workflows/timetable-check.yml` runs on every push and pull request. It unpacks the app page stored in `build-android-dev.yml` and, with plain Node, checks the trains in service and the headway for each line (North-South, East-West including the Changi Airport branch, North East, Circle, Downtown, and Thomson-East Coast), each day type (weekday, Saturday, Sunday, public holiday, and holiday eve), and each time band. It does not build or publish an apk. The Downtown Line still uses its usual gaps: 2.5 minutes in the weekday peaks, 4.5 minutes off-peak, and 7 minutes late.
+
 ## Actions secrets
 
 Set these under **Settings → Secrets and variables → Actions**. Names only; do not commit values.

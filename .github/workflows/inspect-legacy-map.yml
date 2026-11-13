@@ -18,14 +18,14 @@ jobs:
           import re
           h=open('/tmp/a/index.html',encoding='utf-8').read()
           print("HTML_BYTES",len(h))
-          terms = ['trainDot','trainMarker','trainMark','trainEl','drawTrain','renderTrain','mapTrain','trainIcon','trainPos','trainLayer','trainSvg','marker','trainMarkers','trainMarker']
+          terms = ['syncMapStation','mapFocus','paintMap','drawMap','renderMap','MSTN','mapSvg','mapLines','trainPos','map-train','mapTrain','mtrain','mapLayer']
           for term in terms:
             print("\\n=== TERM",term,"===")
             pos=0; count=0
-            while count < 20:
+            while count < 12:
               m=h.lower().find(term.lower(),pos)
               if m < 0: break
-              a=max(0,m-700); b=min(len(h),m+1800)
-              print(h[a:b].replace("\\n"," ")[:2500])
+              a=max(0,m-1200); b=min(len(h),m+3500)
+              print(h[a:b].replace("\\n"," ")[:4500])
               pos=m+len(term); count+=1
           PY

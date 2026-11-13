@@ -4411,9 +4411,12 @@ jobs:
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/res/values'
           cat > 'mrt-tracker-app/app/src/main/res/values/strings.xml' <<'MRTAPP_EOF'
+
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <!-- app_name comes from app/build.gradle: MRT Tracker, or MRT Dev for the developer app -->
+                        <string name="widget_desc">Next trains at your first saved station</string>
+              <string name="widget_empty">Save a station on Home to see its next trains here.</string>
           </resources>
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/res/values'

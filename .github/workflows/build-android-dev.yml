@@ -87,7 +87,7 @@ jobs:
           Replace `app/src/main/assets/index.html` and build again. (Inside the workflow file the page is stored compressed, as gzip then base64, because GitHub won't run a workflow file over 500 KB; the workflow file is made from this project, so change the project and remake it.)
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app'
-          
+          cat > 'mrt-tracker-app/app/build.gradle' <<'MRTAPP_EOF'
           plugins {
               id 'com.android.application'
           }
@@ -176,7 +176,7 @@ jobs:
           -keepattributes JavascriptInterface
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main'
-          
+          cat > 'mrt-tracker-app/app/src/main/AndroidManifest.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -2972,6 +2972,7 @@ jobs:
           6v8A1Z9fVy/FCQA=
           MRTAPP_EOF
 
+          # Mobile map paint guard: the restored page already has the real train-position
           # renderer, but WebView resume/layout can leave the canvas dirty without a repaint.
           # Repaint after layout/resume so train arrows, map count and map overlays stay visible.
           python3 - <<'PY'
@@ -3101,7 +3102,7 @@ jobs:
           }
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
-          
+          cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/MainActivity.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
           
           import android.app.Activity;
@@ -3170,7 +3171,6 @@ jobs:
               /** A video shown full screen (the Live cam's full-screen button), and how to hand it back. */
               private View fullView = null;
               private WebChromeClient.CustomViewCallback fullDone = null;
-              // DEV:START
               /** Train spotting (MRT Tracker's Live cam): the box over the tracks, in the page's CSS pixels, and how often to look. */
               private final android.os.Handler camHandler = new android.os.Handler(android.os.Looper.getMainLooper());
               private android.graphics.RectF camBox = null;
@@ -3184,7 +3184,6 @@ jobs:
                       camHandler.postDelayed(this, camEvery);
                   }
               };
-              // DEV:END
               private static java.lang.ref.WeakReference<MainActivity> current = new java.lang.ref.WeakReference<>(null);
           
               @Override
@@ -3195,7 +3194,6 @@ jobs:
                   prefs.edit().remove("lta_key").apply();   // keys typed into older versions are no longer used
                   getSharedPreferences("game", MODE_PRIVATE).edit().clear().apply();   // the spotting game was removed
           
-                  // Nobody can attach a debugger to the page inside this app.
                   WebView.setWebContentsDebuggingEnabled(false);
           
                   web = new WebView(this);
@@ -3212,7 +3210,6 @@ jobs:
                   s.setAllowUniversalAccessFromFileURLs(false);
                   s.setGeolocationEnabled(false);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-                  // The page only needs its own bundled file; it may not read other files on the phone.
                   s.setAllowFileAccess(false);
                   s.setAllowContentAccess(false);
                   s.setAllowFileAccessFromFileURLs(false);
@@ -3221,13 +3218,10 @@ jobs:
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
                   if (Build.VERSION.SDK_INT >= 26) s.setSafeBrowsingEnabled(true);
                   android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
-                  // The Live cam starts playing as soon as its tab opens.
                   s.setMediaPlaybackRequiresUserGesture(false);
                   web.addJavascriptInterface(new Bridge(), "MrtApp");
-                  // Offline: with no connection, map tiles and fonts come from the WebView's own cache.
                   watchNetwork();
           
-                  // Full screen for the Live cam video (YouTube's full-screen button), sideways while it's shown.
                   web.setWebChromeClient(new WebChromeClient() {
                       @Override
                       public void onShowCustomView(View view, CustomViewCallback callback) {
@@ -3255,13 +3249,9 @@ jobs:
                       }
                   });
           
-                  // Keep the tracker inside the app. Web links (https/http) open in the browser or the
-                  // X/Facebook app; every other kind of link (app intents, scripts, other files) is blocked.
                   web.setWebViewClient(new WebViewClient() {
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                          // Frames inside the page (the Live cam player) may only go where the page's
-                          // security rules allow (the player page, then YouTube), so let them load.
                           if (!request.isForMainFrame()) return false;
                           Uri uri = request.getUrl();
                           String u = uri.toString();
@@ -3316,9 +3306,7 @@ jobs:
                   setContentView(web);
                   web.loadUrl(PAGE_URL);
           
-                  // Updates: check in the background every few hours, and ask once to allow notifications.
                   Updater.schedule(this);
-                  // Notification channels (disruptions, trip reminders) and the background disruption check
                   Alerts.channels(this);
                   Alerts.schedule(this);
                   if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("asked_notify", false)
@@ -3361,7 +3349,6 @@ jobs:
                   current = new java.lang.ref.WeakReference<>(this);
                   web.onResume();
                   if (pageLoaded) checkForUpdate();
-                  // Fresh status every time the app is opened or brought back to the front.
                   if (pageLoaded) {
                       web.evaluateJavascript("window.appResume && window.appResume()", null);
                   }
@@ -3378,7 +3365,6 @@ jobs:
                   fullDone = null;
               }
           
-              // DEV:START
               /**
                * Train spotting: copies what's on screen inside the box (the Live cam's video, over the tracks) into a
                * small grey picture and hands it to the page, which looks for trains in it. Nothing is saved or sent.
@@ -3417,7 +3403,6 @@ jobs:
                       camCopying = false;
                   }
               }
-              // DEV:END
           
               /** Hides the status and navigation bars while a video is full screen (a swipe brings them back briefly). */
               @SuppressWarnings("deprecation")
@@ -3504,12 +3489,9 @@ jobs:
           
               @Override
               protected void onPause() {
-                  // The Live cam stops streaming while the app is in the background (it saves mobile data).
                   leaveFullScreen();
-                  // DEV:START
                   camBox = null;
                   camHandler.removeCallbacks(camTick);
-                  // DEV:END
                   if (pageLoaded) web.evaluateJavascript("window.appPause && window.appPause()", null);
                   web.onPause();
                   super.onPause();
@@ -3557,7 +3539,6 @@ jobs:
                   @JavascriptInterface
                   public void installUpdate() {
                       if (updating || !Updater.enabled()) return;
-                      // Android asks once for permission to install updates from this app.
                       if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
                           runOnUiThread(() -> {
                               web.evaluateJavascript("window.updateNeedsPermission && window.updateNeedsPermission()", null);
@@ -3682,7 +3663,6 @@ jobs:
                       }).start();
                   }
           
-                  // DEV:START
                   /**
                    * Train spotting on the Live cam (MRT Tracker): {"x","y","w","h"} is the box over the tracks in the page's
                    * CSS pixels, "every" how often to look (ms); {} stops. False if this phone can't (Android 8 or newer is needed).
@@ -3709,7 +3689,6 @@ jobs:
                       });
                       return true;
                   }
-                  // DEV:END
           
                   /** Checks for a new version now (the Settings button). Reply: {"available":bool,"version":"..."} */
                   @JavascriptInterface
@@ -3728,8 +3707,7 @@ jobs:
                   public boolean builtInKey() {
                       return !ltaKey().isEmpty();
                   }
-          
-          
+
                   /** Which app this is: "beta" (MRT Tracker) or "dev" (MRT Tracker, for trying new features). */
                   @JavascriptInterface
                   public String getChannel() {
@@ -3839,7 +3817,6 @@ jobs:
                           HttpURLConnection conn = null;
                           try {
                               URL u = new URL(url);
-                              // LTA, Google News and NEA weather only.
                               String host = u.getHost().toLowerCase(java.util.Locale.ROOT);
                               boolean allowed = ALLOWED_HOSTS.contains(host);
                               if (!"https".equals(u.getProtocol()) || !allowed) {
@@ -3850,7 +3827,6 @@ jobs:
                               conn.setReadTimeout(15000);
                               conn.setRequestProperty("User-Agent", "MRTTracker/1.0 (Android)");
                               conn.setRequestProperty("Accept", "application/json, application/rss+xml, text/xml");
-                              // The LTA key is only ever sent to LTA.
                               if (withKey && host.equals("datamall2.mytransport.sg")) conn.setRequestProperty("AccountKey", ltaKey());
                               code = conn.getResponseCode();
                               InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
@@ -3876,7 +3852,6 @@ jobs:
                           int code = 200;
                           JSONObject out = new JSONObject();
                           try {
-                              // 1. Ask LTA for the temporary link.
                               HttpURLConnection c = open("https://datamall2.mytransport.sg/ltaodataservice/GTFSScheduleTrain", true);
                               int status = c.getResponseCode();
                               if (status != 200) {
@@ -3895,7 +3870,6 @@ jobs:
                                   throw new java.io.IOException("Unexpected download link");
                               }
           
-                              // 2. Download the zip to the app's cache.
                               java.io.File zip = new java.io.File(getCacheDir(), "gtfs_schedule.zip");
                               HttpURLConnection d = (HttpURLConnection) lu.openConnection();
                               d.setConnectTimeout(15000);
@@ -3907,7 +3881,6 @@ jobs:
                               d.disconnect();
                               out.put("size", zip.length());
           
-                              // 3. Save a copy to Downloads (Android 10 and newer).
                               String name = "lta_gtfs_schedule_" + new java.text.SimpleDateFormat("yyyy-MM-dd_HHmm", java.util.Locale.US).format(new java.util.Date()) + ".zip";
                               if (android.os.Build.VERSION.SDK_INT >= 29) {
                                   android.content.ContentValues cv = new android.content.ContentValues();
@@ -3924,7 +3897,6 @@ jobs:
                                   out.put("saved", "");
                               }
           
-                              // 4. Summarise: each file, its size, line count and first lines.
                               org.json.JSONArray files = new org.json.JSONArray();
                               try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(zip)) {
                                   java.util.Enumeration<? extends java.util.zip.ZipEntry> en = zf.entries();
@@ -3989,9 +3961,7 @@ jobs:
                       return "";
                   }
               }
-          
-          
-          
+
               private HttpURLConnection open(String url, boolean withKey) throws java.io.IOException {
                   HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                   conn.setConnectTimeout(10000);
@@ -5632,7 +5602,6 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/res/drawable'
           cat > 'mrt-tracker-app/app/src/main/res/drawable/widget_bg.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <!-- The widget's dark glass panel. -->
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
               <solid android:color="#E6141A22" />
               <stroke android:width="1dp" android:color="#33FFFFFF" />
@@ -5643,7 +5612,6 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/res/layout'
           cat > 'mrt-tracker-app/app/src/main/res/layout/widget_trains.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <!-- Home screen widget: the first saved station's next trains (filled in by TrainWidget.java). -->
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:id="@+id/w_root"
               android:layout_width="match_parent"
@@ -5852,7 +5820,6 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/res/xml'
           cat > 'mrt-tracker-app/app/src/main/res/xml/train_widget_info.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <!-- Home screen widget: about 4 x 2 cells, resizable; the app refreshes it whenever Home updates. -->
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
               android:description="@string/widget_desc"
               android:initialLayout="@layout/widget_trains"
@@ -5896,28 +5863,23 @@ jobs:
           NAMES = {"SEN": "Sentosa Express", "RTS": "RTS Link"}
           NEAR = 600            # a station must be within this many metres of the track
           report = []
-          
-          
+
           def say(line=""):
               print(line)
               report.append(line)
-          
-          
+
           def finish():
               if SUMMARY:
                   with open(SUMMARY, "a") as f:
                       f.write("## RTS Link and Sentosa Express tracks\n\n" + "\n".join(report) + "\n")
               sys.exit(0)
-          
-          
+
           def to_xy(lat, lon):
               return (lon - LON0) * KX, -(lat - LAT0) * KY
-          
-          
+
           def dist(a, b):
               return math.hypot(a[0] - b[0], a[1] - b[1])
-          
-          
+
           def app_lines():
               """The app's stations for each line here (in order) and where they are on its map."""
               html = open(os.path.join(ASSETS, "index.html"), encoding="utf-8").read()
@@ -5930,8 +5892,7 @@ jobs:
                   if len(seq) >= 2 and all(c in pos for c in seq):
                       out[code] = [(c, tuple(pos[c])) for c in seq]
               return out
-          
-          
+
           def overpass():
               ids = ",".join(str(i) for a, b, _ in ROUTES.values() for i in (a, b))
               by_name = "".join(f"relation{q};" for _, _, q in ROUTES.values())
@@ -5954,8 +5915,7 @@ jobs:
                           last = f"{type(e).__name__}: {e}"
                       time.sleep(2 + attempt * 6)
               raise RuntimeError(last)
-          
-          
+
           def track_of(rel):
               """The route's track as one line of map points, joining its ways end to end in the route's order."""
               ways = [[to_xy(p["lat"], p["lon"]) for p in m["geometry"] if p]
@@ -5972,15 +5932,13 @@ jobs:
                   gap, base, nxt = min(options, key=lambda o: o[0])
                   line = base + (nxt[1:] if gap < 1 else nxt)
               return line
-          
-          
+
           def along(line):
               cum = [0.0]
               for i in range(1, len(line)):
                   cum.append(cum[-1] + dist(line[i - 1], line[i]))
               return cum
-          
-          
+
           def place(line, cum, p):
               """How far along the track the point nearest to p is, and how far p is from the track."""
               best = (1e18, 0.0)
@@ -5993,8 +5951,7 @@ jobs:
                   if d < best[0]:
                       best = (d, cum[i] + t * math.sqrt(L2))
               return best[1], best[0]
-          
-          
+
           def simplify(pts, tol):
               if len(pts) < 3:
                   return pts
@@ -6009,8 +5966,7 @@ jobs:
               if dmax <= tol:
                   return [a, b]
               return simplify(pts[: idx + 1], tol)[:-1] + simplify(pts[idx:], tol)
-          
-          
+
           def cut(line, stations):
               """One path per pair of neighbouring stations, along the track; None if the track doesn't fit."""
               cum = along(line)
@@ -6031,8 +5987,7 @@ jobs:
                   pts = simplify(pts, 4)
                   paths.append([v for q in pts for v in (round(q[0]), round(q[1]))])
               return paths, f"{len(line)} track points, {sum(len(p) // 2 for p in paths)} kept"
-          
-          
+
           def build(elements, lines):
               rels = {e["id"]: e for e in elements if e.get("type") == "relation"}
               paths, used = {}, {}
@@ -6062,8 +6017,7 @@ jobs:
                   else:
                       say(f"⚠️ {names}: {why}, so this download can't be used for it.")
               return paths, used
-          
-          
+
           def main():
               try:
                   lines = app_lines()
@@ -6107,8 +6061,7 @@ jobs:
                       say("No saved tracks either, so both lines stay as straight lines this time.")
               except Exception as e:
                   say(f"⚠️ The tracks step hit an error ({type(e).__name__}: {e}). Both lines stay as straight lines.")
-          
-          
+
           main()
           finish()
           MRTAPP_EOF

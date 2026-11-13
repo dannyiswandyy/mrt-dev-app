@@ -4473,7 +4473,7 @@ jobs:
           mkdir -p 'mrt-tracker-app'
           cat > 'mrt-tracker-app/gradle.properties' <<'MRTAPP_EOF'
           org.gradle.jvmargs=-Xmx2g
-          android.useAndroidX=false
+          android.useAndroidX=true
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app'
           cat > 'mrt-tracker-app/settings.gradle' <<'MRTAPP_EOF'

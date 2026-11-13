@@ -5033,11 +5033,8 @@ jobs:
           cp mrt-tracker-app/app/build/outputs/apk/release/app-release.apk "$APK"
           printf '{"versionCode":%s,"versionName":"%s"}\n' "$VC" "$VN" > version.json
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.CHANNEL == 'dev' && 'mrt-dev-apk' || 'mrt-tracker-apk' }}
-          path: ${{ env.APK }}
-
+      # APKs are published directly to the appropriate GitHub Release below.
+      # Do not upload a separate Actions artifact: that creates a second, confusing APK download.
       - name: Publish to Releases
         env:
           GH_TOKEN: ${{ github.token }}

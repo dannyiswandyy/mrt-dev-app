@@ -4526,18 +4526,15 @@ jobs:
           SKIP = {"no", "construction", "proposed", "demolished", "abandoned", "ruins", "bridge"}
           report = []
 
-
           def say(line=""):
               print(line)
               report.append(line)
-
 
           def finish():
               if SUMMARY:
                   with open(SUMMARY, "a") as f:
                       f.write("## 3D buildings\n\n" + "\n".join(report) + "\n")
               sys.exit(0)
-
 
           def station_points():
               """Station positions from the map data in the app's page, joined where they're close together."""
@@ -4550,14 +4547,11 @@ jobs:
                       out.append((x, y))
               return out
 
-
           def to_latlon(x, y):
               return LAT0 - y / KY, LON0 + x / KX
 
-
           def to_xy(lat, lon):
               return (lon - LON0) * KX, -(lat - LAT0) * KY
-
 
           def overpass(points):
               parts = []
@@ -4585,14 +4579,12 @@ jobs:
                       time.sleep(3 + attempt * 7)
               raise RuntimeError(last)
 
-
           def num(v):
               m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(m|metres?|meters?|ft|feet|')?\s*$", str(v or ""), re.I)
               if not m:
                   return None
               n = float(m.group(1))
               return n * 0.3048 if m.group(2) and m.group(2).lower() in ("ft", "feet", "'") else n
-
 
           def height(tags):
               h = num(tags.get("height"))
@@ -4602,7 +4594,6 @@ jobs:
               if lv and 0 < lv <= 150:
                   return max(3.0, lv * LEVEL_M + (num(tags.get("roof:levels")) or 0) * LEVEL_M * 0.5)
               return LEVELS.get(tags.get("building", "yes"), 3) * LEVEL_M
-
 
           def simplify(pts, tol):
               if len(pts) < 4:
@@ -4625,7 +4616,6 @@ jobs:
                       stack += [(a, bi), (bi, b)]
               return [p for p, k in zip(pts, keep) if k]
 
-
           def simplify_ring(pts, tol):
               """Simplify a closed outline (first point not repeated): split it at the point farthest from
               the start and simplify each half, since both ends of a closed line are the same point."""
@@ -4636,10 +4626,8 @@ jobs:
               b = simplify(pts[far:] + [pts[0]], tol)
               return a[:-1] + b[:-1]
 
-
           def area(pts):
               return abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1] for i in range(len(pts)))) / 2
-
 
           def rings(el):
               """Outer rings of a building, as lists of (lat, lon)."""
@@ -4667,7 +4655,6 @@ jobs:
                           break
                   out.append(ring)
               return out
-
 
           def pack(elements):
               seen, out = set(), []
@@ -4697,13 +4684,11 @@ jobs:
               out.sort(key=lambda t: t[0])
               return [f for _, f in out]
 
-
           def use(path, why):
               os.makedirs(ASSETS, exist_ok=True)
               shutil.copyfile(path, OUT)
               j = json.load(open(OUT))
               say(f"{why}: {len(j['b']):,} buildings from OpenStreetMap, downloaded {j['at']} ({os.path.getsize(OUT) / 1e6:.1f} MB).")
-
 
           def main():
               pts = station_points()
@@ -4755,7 +4740,6 @@ jobs:
                   # tells the workflow there's a new copy worth saving for next time
                   open(os.path.join(os.path.dirname(os.path.abspath(CACHE)), "osm-fresh"), "w").write(j["at"])
               say(f"✅ {len(b):,} buildings packed ({os.path.getsize(OUT) / 1e6:.1f} MB)" + (f"; {failed} of {parts} parts missing, so some stations have no buildings." if failed else "."))
-
 
           if __name__ == "__main__":
               try:
@@ -5191,7 +5175,6 @@ jobs:
           cat > 'mrt-tracker-app/tools/lines.json' <<'MRTAPP_EOF'
           {"NSL":{"stations":[["NS1","Jurong East"],["NS2","Bukit Batok"],["NS3","Bukit Gombak"],["NS4","Choa Chu Kang"],["NS5","Yew Tee"],["NS7","Kranji"],["NS8","Marsiling"],["NS9","Woodlands"],["NS10","Admiralty"],["NS11","Sembawang"],["NS12","Canberra"],["NS13","Yishun"],["NS14","Khatib"],["NS15","Yio Chu Kang"],["NS16","Ang Mo Kio"],["NS17","Bishan"],["NS18","Braddell"],["NS19","Toa Payoh"],["NS20","Novena"],["NS21","Newton"],["NS22","Orchard"],["NS23","Somerset"],["NS24","Dhoby Ghaut"],["NS25","City Hall"],["NS26","Raffles Place"],["NS27","Marina Bay"],["NS28","Marina South Pier"]],"loop":false,"lrt":false},"EWL":{"stations":[["EW1","Pasir Ris"],["EW2","Tampines"],["EW3","Simei"],["EW4","Tanah Merah"],["EW5","Bedok"],["EW6","Kembangan"],["EW7","Eunos"],["EW8","Paya Lebar"],["EW9","Aljunied"],["EW10","Kallang"],["EW11","Lavender"],["EW12","Bugis"],["EW13","City Hall"],["EW14","Raffles Place"],["EW15","Tanjong Pagar"],["EW16","Outram Park"],["EW17","Tiong Bahru"],["EW18","Redhill"],["EW19","Queenstown"],["EW20","Commonwealth"],["EW21","Buona Vista"],["EW22","Dover"],["EW23","Clementi"],["EW24","Jurong East"],["EW25","Chinese Garden"],["EW26","Lakeside"],["EW27","Boon Lay"],["EW28","Pioneer"],["EW29","Joo Koon"],["EW30","Gul Circle"],["EW31","Tuas Crescent"],["EW32","Tuas West Road"],["EW33","Tuas Link"]],"loop":false,"lrt":false},"NEL":{"stations":[["NE1","HarbourFront"],["NE3","Outram Park"],["NE4","Chinatown"],["NE5","Clarke Quay"],["NE6","Dhoby Ghaut"],["NE7","Little India"],["NE8","Farrer Park"],["NE9","Boon Keng"],["NE10","Potong Pasir"],["NE11","Woodleigh"],["NE12","Serangoon"],["NE13","Kovan"],["NE14","Hougang"],["NE15","Buangkok"],["NE16","Sengkang"],["NE17","Punggol"],["NE18","Punggol Coast"]],"loop":false,"lrt":false},"CCL":{"stations":[["CC1","Dhoby Ghaut"],["CC2","Bras Basah"],["CC3","Esplanade"],["CC4","Promenade"],["CC5","Nicoll Highway"],["CC6","Stadium"],["CC7","Mountbatten"],["CC8","Dakota"],["CC9","Paya Lebar"],["CC10","MacPherson"],["CC11","Tai Seng"],["CC12","Bartley"],["CC13","Serangoon"],["CC14","Lorong Chuan"],["CC15","Bishan"],["CC16","Marymount"],["CC17","Caldecott"],["CC19","Botanic Gardens"],["CC20","Farrer Road"],["CC21","Holland Village"],["CC22","Buona Vista"],["CC23","one-north"],["CC24","Kent Ridge"],["CC25","Haw Par Villa"],["CC26","Pasir Panjang"],["CC27","Labrador Park"],["CC28","Telok Blangah"],["CC29","HarbourFront"],["CC30","Keppel"],["CC31","Cantonment"],["CC32","Prince Edward Road"],["CC33","Marina Bay"],["CC34","Bayfront"]],"loop":false,"lrt":false},"DTL":{"stations":[["DT1","Bukit Panjang"],["DT2","Cashew"],["DT3","Hillview"],["DT4","Hume"],["DT5","Beauty World"],["DT6","King Albert Park"],["DT7","Sixth Avenue"],["DT8","Tan Kah Kee"],["DT9","Botanic Gardens"],["DT10","Stevens"],["DT11","Newton"],["DT12","Little India"],["DT13","Rochor"],["DT14","Bugis"],["DT15","Promenade"],["DT16","Bayfront"],["DT17","Downtown"],["DT18","Telok Ayer"],["DT19","Chinatown"],["DT20","Fort Canning"],["DT21","Bencoolen"],["DT22","Jalan Besar"],["DT23","Bendemeer"],["DT24","Geylang Bahru"],["DT25","Mattar"],["DT26","MacPherson"],["DT27","Ubi"],["DT28","Kaki Bukit"],["DT29","Bedok North"],["DT30","Bedok Reservoir"],["DT31","Tampines West"],["DT32","Tampines"],["DT33","Tampines East"],["DT34","Upper Changi"],["DT35","Expo"],["DT36","Xilin"],["DT37","Sungei Bedok"]],"loop":false,"lrt":false},"TEL":{"stations":[["TE1","Woodlands North"],["TE2","Woodlands"],["TE3","Woodlands South"],["TE4","Springleaf"],["TE5","Lentor"],["TE6","Mayflower"],["TE7","Bright Hill"],["TE8","Upper Thomson"],["TE9","Caldecott"],["TE11","Stevens"],["TE12","Napier"],["TE13","Orchard Boulevard"],["TE14","Orchard"],["TE15","Great World"],["TE16","Havelock"],["TE17","Outram Park"],["TE18","Maxwell"],["TE19","Shenton Way"],["TE20","Marina Bay"],["TE22","Gardens by the Bay"],["TE23","Tanjong Rhu"],["TE24","Katong Park"],["TE25","Tanjong Katong"],["TE26","Marine Parade"],["TE27","Marine Terrace"],["TE28","Siglap"],["TE29","Bayshore"],["TE30","Bedok South"],["TE31","Sungei Bedok"]],"loop":false,"lrt":false},"CG":{"stations":[["CG","Tanah Merah"],["CG1","Expo"],["CG2","Changi Airport"]],"loop":false,"lrt":false},"BP":{"stations":[["BP1","Choa Chu Kang"],["BP2","South View"],["BP3","Keat Hong"],["BP4","Teck Whye"],["BP5","Phoenix"],["BP6","Bukit Panjang"],["BP7","Petir"],["BP8","Pending"],["BP9","Bangkit"],["BP10","Fajar"],["BP11","Segar"],["BP12","Jelapang"],["BP13","Senja"],["BP6","Bukit Panjang"]],"loop":false,"lrt":true},"SE":{"stations":[["STC","Sengkang"],["SE1","Compassvale"],["SE2","Rumbia"],["SE3","Bakau"],["SE4","Kangkar"],["SE5","Ranggung"],["STC","Sengkang"]],"loop":true,"lrt":true},"SW":{"stations":[["STC","Sengkang"],["SW1","Cheng Lim"],["SW2","Farmway"],["SW3","Kupang"],["SW4","Thanggam"],["SW5","Fernvale"],["SW6","Layar"],["SW7","Tongkang"],["SW8","Renjong"],["STC","Sengkang"]],"loop":true,"lrt":true},"PE":{"stations":[["PTC","Punggol"],["PE1","Cove"],["PE2","Meridian"],["PE3","Coral Edge"],["PE4","Riviera"],["PE5","Kadaloor"],["PE6","Oasis"],["PE7","Damai"],["PTC","Punggol"]],"loop":true,"lrt":true},"PW":{"stations":[["PTC","Punggol"],["PW1","Sam Kee"],["PW2","Teck Lee"],["PW3","Punggol Point"],["PW4","Samudera"],["PW5","Nibong"],["PW6","Sumang"],["PW7","Soo Teck"],["PTC","Punggol"]],"loop":true,"lrt":true}}
           MRTAPP_EOF
-
 
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/Alerts.java' <<'MRTAPP_EOF'
@@ -5888,26 +5871,7 @@ jobs:
 
           mkdir -p 'mrt-tracker-app/tools'
           cat > 'mrt-tracker-app/tools/build_tracks.py' <<'MRTAPP_EOF'
-          """Real track shapes for the RTS Link and the Sentosa Express, which SG Rail Data doesn't have.
-          
-          Runs on GitHub during every build:  python3 tools/build_tracks.py <app project folder> [cache folder]
-          
-          The tracks come from OpenStreetMap (data (c) OpenStreetMap contributors, ODbL), through the Overpass API:
-          the route relations for each line, as listed on the OpenStreetMap wiki page "Singapore/Rail Transport":
-            Sentosa Express  2353581 (VivoCity > Beach), 9663249 (Beach > VivoCity)
-            RTS Link         19927885 (Bukit Chagar > Woodlands North), 19927886 (Woodlands North > Bukit Chagar)
-          If those ever change, it also looks the routes up by name. Each route's track is cut at the app's stations,
-          so the line runs station to station along the real track, in the app's own map projection.
-          
-          A copy is kept in the cache folder. If the download fails, the last saved copy is used; with neither,
-          the app keeps its straight lines for these two lines. After a download that changed the tracks it writes
-          "osm-fresh" next to the cache folder, so the workflow saves the new copy. This step never fails the build.
-          
-          tracks.json:
-            v: 1, src: attribution, at: "YYYY-MM-DD", rel: {line: OpenStreetMap relation id}
-            paths: {line: [[x, y, x, y, ...], ...]}  one path per pair of neighbouring stations, in the app's station
-                   order, in the map's own metres (x east, y south of central Singapore), like the map's other lines
-          """
+          """RTS/Sentosa OSM track builder."""
           import json, math, os, re, sys, time, urllib.parse, urllib.request
           
           ROOT = sys.argv[1] if len(sys.argv) > 1 else "."

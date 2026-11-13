@@ -18,20 +18,14 @@ jobs:
           import re
           h=open('/tmp/a/index.html',encoding='utf-8').read()
           print("HTML_BYTES",len(h))
-          pats = [
-            r'function\\s+\\w*(?:train|map|draw|render|marker)\\w*\\s*\\(',
-            r'\\b(?:train|trains)\\b.{0,120}\\b(?:marker|dot|svg|canvas|map)\\b',
-            r'\\b(?:marker|dot|svg|canvas|map)\\b.{0,120}\\b(?:train|trains)\\b',
-            r'new\\s+Map\\(',
-            r'querySelectorAll\\([^)]*train',
-          ]
-          for p in pats:
-            print("\\n=== PATTERN",p,"===")
-            try:
-              ms=list(re.finditer(p,h,re.I))
-            except Exception as e:
-              print("PATTERN ERROR",e); continue
-            for m in ms[:30]:
-              a=max(0,m.start()-700); b=min(len(h),m.end()+1800)
-              print(h[a:b].replace('\\n',' ')[:2500])
+          terms = ['trainDot','trainMarker','trainMark','trainEl','drawTrain','renderTrain','mapTrain','trainIcon','trainPos','trainLayer','trainSvg','marker','trainMarkers','trainMarker']
+          for term in terms:
+            print("\\n=== TERM",term,"===")
+            pos=0; count=0
+            while count < 20:
+              m=h.lower().find(term.lower(),pos)
+              if m < 0: break
+              a=max(0,m-700); b=min(len(h),m+1800)
+              print(h[a:b].replace("\\n"," ")[:2500])
+              pos=m+len(term); count+=1
           PY

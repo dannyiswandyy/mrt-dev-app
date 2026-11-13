@@ -2972,7 +2972,6 @@ jobs:
           6v8A1Z9fVy/FCQA=
           MRTAPP_EOF
 
-          # Mobile map paint guard: the restored page already has the real train-position
           # renderer, but WebView resume/layout can leave the canvas dirty without a repaint.
           # Repaint after layout/resume so train arrows, map count and map overlays stay visible.
           python3 - <<'PY'

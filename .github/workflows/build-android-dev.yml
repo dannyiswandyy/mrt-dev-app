@@ -2971,6 +2971,9 @@ jobs:
               setTimeout(paint, 500);
               setTimeout(paint, 1200);
               setInterval(paint, 1000);
+              try {
+                if (typeof refreshCrowd === "function") setTimeout(() => refreshCrowd(true), 700);
+              } catch (_) {}
             };
             if (document.readyState === "loading") {
               document.addEventListener("DOMContentLoaded", start, {once:true});

@@ -1,0 +1,24 @@
+name: Inspect legacy map HTML
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract and inspect
+        run: |
+          mkdir -p /tmp/a
+          sed -n "/base64 -d <<'MRTAPP_EOF'/,/MRTAPP_EOF/p" .github/workflows/build-android-dev.yml | sed '1d;$d' | sed 's/^          //' | base64 -d | gunzip > /tmp/a/index.html
+          python3 - <<'PY'
+          import re
+          h=open('/tmp/a/index.html',encoding='utf-8').read()
+          print("HTML_BYTES",len(h))
+          for term in ['trains running','Crowds','crowd','train','marker','Plan a trip','3D','Map','Line Board','running']:
+            print("\n=== TERM",term,"===")
+            for m in list(re.finditer(term,h,re.I))[:8]:
+              a=max(0,m.start()-500); b=min(len(h),m.end()+1000)
+              print(h[a:b].replace('\n',' ')[:1600])
+          PY

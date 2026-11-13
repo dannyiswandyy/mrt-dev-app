@@ -27,7 +27,11 @@ jobs:
           ]
           for p in pats:
             print("\\n=== PATTERN",p,"===")
-            for m in list(re.finditer(p,h,re.I))[:30]:
+            try:
+              ms=list(re.finditer(p,h,re.I))
+            except Exception as e:
+              print("PATTERN ERROR",e); continue
+            for m in ms[:30]:
               a=max(0,m.start()-700); b=min(len(h),m.end()+1800)
               print(h[a:b].replace('\\n',' ')[:2500])
           PY

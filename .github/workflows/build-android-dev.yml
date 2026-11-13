@@ -2947,6 +2947,44 @@ jobs:
           HDurEACmvitNxxXrsRJcW5yLivfVafJvjVd5HxC3F3aL9OZ7xq2FDVoS7vigMSnmnV/UC3DuY70kWTn9cEgK4HLnq6/o88lyOtn5
           6v8A1Z9fVy/FCQA=
           MRTAPP_EOF
+
+          # Mobile map paint guard: the restored page already has the real train-position
+          # renderer, but WebView resume/layout can leave the canvas dirty without a repaint.
+          # Repaint after layout/resume so train arrows, map count and map overlays stay visible.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('mrt-tracker-app/app/src/main/assets/index.html')
+          h = p.read_text(encoding='utf-8')
+          patch = r'''<script>
+          (() => {
+            const paint = () => {
+              try {
+                const w = document.getElementById("mapWrap");
+                if (!w || w.hidden || !document.getElementById("mapCv")) return;
+                if (typeof mapResize === "function") mapResize();
+                if (typeof mapDraw === "function") mapDraw();
+              } catch (_) {}
+            };
+            const start = () => {
+              paint();
+              setTimeout(paint, 120);
+              setTimeout(paint, 500);
+              setTimeout(paint, 1200);
+              setInterval(paint, 1000);
+            };
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", start, {once:true});
+            } else start();
+            document.addEventListener("visibilitychange", () => {
+              if (!document.hidden) setTimeout(paint, 80);
+            });
+          })();
+          </script>'''
+          if 'data-mrt-map-paint-fix="1"' not in h:
+              h = h.replace('</body>', '<div data-mrt-map-paint-fix="1" hidden></div>' + patch + '</body>')
+              p.write_text(h, encoding='utf-8')
+          PY
+
           mkdir -p 'mrt-tracker-app/app/src/main/assets'
           cat > 'mrt-tracker-app/app/src/main/assets/livecam.html' <<'MRTAPP_EOF'
           <!doctype html>

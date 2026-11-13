@@ -1,0 +1,69 @@
+name: Legacy map smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-map-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract embedded app page
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, pathlib, re
+          src = pathlib.Path(".github/workflows/build-android-dev.yml").read_text()
+          match = re.search(
+              r"base64 -d <<'MRTAPP_EOF' \| gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'\n(.*?)\n          MRTAPP_EOF",
+              src, re.S
+          )
+          if not match:
+              raise SystemExit("Embedded gzip/base64 index.html block not found.")
+          body = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in match.group(1).splitlines()
+          )
+          html = gzip.decompress(base64.b64decode(body)).decode("utf-8")
+          pathlib.Path("/tmp/index.html").write_text(html)
+          print(f"Extracted index.html: {len(html):,} bytes")
+          if len(html) < 100_000:
+              raise SystemExit("Extracted app page is unexpectedly small; possible accidental rebuild/truncation.")
+
+          required = {
+              "Map tab": "Map",
+              "Line Board tab": "Line Board",
+              "Plan a trip": "Plan a trip",
+              "3D control": "3D",
+              "station search": "Search station or code",
+              "train markers": "trains running",
+          }
+          missing = [name for name, needle in required.items() if needle not in html]
+          if missing:
+              raise SystemExit("Legacy map features missing: " + ", ".join(missing))
+
+          if "leaflet" not in html.lower() and "maplibre" not in html.lower():
+              raise SystemExit("No recognised map engine reference found.")
+
+          print("Legacy map smoke test passed.")
+          PY
+
+      - name: Check workflow compression stays consistent
+        run: |
+          if grep -q "xz -d" .github/workflows/build-android-dev.yml; then
+            echo "ERROR: build workflow uses XZ but the embedded page is gzip."
+            exit 1
+          fi
+          if grep -q "lzma" .github/workflows/build-android-dev.yml; then
+            echo "ERROR: build workflow contains stale LZMA extraction logic."
+            exit 1
+          fi
+          grep -q "gunzip" .github/workflows/build-android-dev.yml
+          echo "Compression format check passed."

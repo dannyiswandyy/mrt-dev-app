@@ -178,7 +178,7 @@ jobs:
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main'
           cat > 'mrt-tracker-app/app/src/main/AndroidManifest.xml' <<'MRTAPP_EOF'
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
           
               <uses-permission android:name="android.permission.INTERNET" />
               <!-- In-app updates: install new versions, notify about them, and keep checking after a restart. -->

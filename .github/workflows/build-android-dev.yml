@@ -1,4 +1,5 @@
 # MRT Tracker - Android app builder
+# Legacy good-map baseline restored; keep this workflow self-contained.
 # This one file holds the whole app. Every time it is saved on GitHub, it builds
 # the app and publishes the .apk under Releases.
 #

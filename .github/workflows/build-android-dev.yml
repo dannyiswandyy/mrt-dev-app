@@ -3431,6 +3431,8 @@ jobs:
               p.write_text(h,encoding='utf-8')
 
           PY
+          echo "=== TIMETABLE FUNCTION SIGNATURES ==="
+          python3 -c 'import re; h=open("mrt-tracker-app/app/src/main/assets/index.html",encoding="utf-8").read(); [(print(m.group(0)), print(h[max(0,m.start()-300):m.start()+1800])) for m in re.finditer(r"function\\s+(?:trainsOn|nextArrivals|lineCuts|cutTrain)\\s*\\([^)]*\\)",h)]'
 
       - uses: actions/setup-java@v4
         with:

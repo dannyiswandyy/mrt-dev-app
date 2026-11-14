@@ -22,20 +22,9 @@ jobs:
       - name: Extract the app page
         run: |
           python3 - << 'PY'
-          import base64, gzip, pathlib, re, os
-          src = pathlib.Path(".github/workflows/build-android-dev.yml").read_text()
-          match = re.search(
-              r"base64 -d <<'MRTAPP_EOF' \| gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'\n(.*?)\n          MRTAPP_EOF",
-              src,
-              re.S,
-          )
-          if not match:
-              raise SystemExit("The embedded index.html block was not found in build-android-dev.yml.")
-          body = "\n".join(
-              line[10:] if line.startswith("          ") else line
-              for line in match.group(1).splitlines()
-          )
-          html = gzip.decompress(base64.b64decode(body))
+          import base64, gzip, pathlib, os
+          raw = pathlib.Path("data/mrt-dev-page.b64").read_text()
+          html = gzip.decompress(base64.b64decode(raw))
           out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "index.html"
           out.write_bytes(html)
           with pathlib.Path(os.environ["GITHUB_ENV"]).open("a") as env:

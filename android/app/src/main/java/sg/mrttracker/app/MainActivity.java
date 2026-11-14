@@ -440,6 +440,16 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** Station exits and the places near each one (OpenStreetMap), packed at build time ("" if none). */
+        @JavascriptInterface
+        public String getExits() {
+            try (InputStream in = getAssets().open("exits.json")) {
+                return readAll(in);
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
         /** Real track shapes for the RTS Link and the Sentosa Express (OpenStreetMap), packed when GitHub builds the app. */
         @JavascriptInterface
         public String getTracks() {

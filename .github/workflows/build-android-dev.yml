@@ -90,6 +90,14 @@ jobs:
             python3 mrt-tracker-app/tools/build_tracks.py mrt-tracker-app osm-cache
           fi
 
+      # Station exits and the places near each one, from OpenStreetMap, for the station pages and the map.
+      # Kept with the buildings between builds; never fails the build.
+      - name: Fetch station exits from OpenStreetMap
+        run: |
+          if [ -f mrt-tracker-app/tools/build_exits.py ]; then
+            python3 mrt-tracker-app/tools/build_exits.py mrt-tracker-app osm-cache
+          fi
+
       - name: Save buildings for next time
         if: hashFiles('osm-fresh') != ''
         uses: actions/cache/save@v4

@@ -1007,6 +1007,13 @@ body.on-map .hx-sheet{max-height:58vh}
 .plat .t em{font-style:normal;font-weight:600}
 .plat .sbrow{background:color-mix(in srgb,var(--soft) 70%,transparent)}
 .plat .code{margin-right:4px}
+.ex-sec{display:grid;gap:8px;min-width:0}
+.ex-list,.tx-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ex-list li,.tx-list li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;font-size:14px;line-height:1.35;min-width:0}
+.ex-list small,.tx-list small{color:var(--muted);font-size:12px}
+.ex-tag{min-width:26px;height:24px;padding:0 5px;border-radius:4px;background:#ffd200;color:#111;border:1px solid #1a1a1a;font:700 14px/22px var(--display);text-align:center}
+.tx-list .code{margin-top:2px}
+.ex-src{font-size:11.5px;color:var(--muted);margin:0;line-height:1.4}
 .hx-crowd{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px}
 .hx-crowd > span{display:inline-flex;align-items:center;gap:4px}
 .hx-cam{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid var(--rule);border-radius:16px;padding:12px 14px;background:linear-gradient(160deg,#2b3542,#10151c);color:#fff;font:inherit;cursor:pointer}
@@ -2961,6 +2968,47 @@ const BLD_TILT = 0.6;                 // how far a roof is drawn above its footp
 let bldRaw = null, BLD = null, bldShown = false, bld3d = store.get("mrt.bld3d", true) !== false;
 try { bldRaw = (window.MrtApp && MrtApp.getBuildings && MrtApp.getBuildings()) || null; } catch(e){ bldRaw = null; }
 const bldHave = () => !!(bldRaw || (BLD && BLD.list.length));
+/* Station exits and the places near each one, from OpenStreetMap, packed when GitHub builds the app (tools/build_exits.py).
+   Each station's exits are gathered from all its codes, so an interchange shows all of them. */
+let exRaw = null, EXITS = null;
+try { exRaw = (window.MrtApp && MrtApp.getExits && MrtApp.getExits()) || null; } catch(e){ exRaw = null; }
+function exitsData(){
+  if (EXITS || !exRaw) return EXITS;
+  try {
+    const j = JSON.parse(exRaw), byStation = {};
+    for (const e of MSTN){
+      const seen = new Set(), list = [];
+      for (const x of e.codes) for (const r of (j.x[x.code] || [])){
+        const k = r[0] + "|" + r[1] + "|" + r[2]; if (seen.has(k)) continue; seen.add(k);
+        list.push({label: r[0], x: r[1], y: r[2], near: r[3] || []});
+      }
+      list.sort((a, b) => (a.label === "") - (b.label === "") || a.label.localeCompare(b.label, "en", {numeric: true}));
+      if (list.length) byStation[e.name] = list;
+    }
+    EXITS = {at: j.at, src: j.src, byStation, all: Object.entries(byStation).flatMap(([name, l]) => l.map(x => Object.assign({name}, x)))};
+  } catch(e){ EXITS = {at: "", src: "", byStation: {}, all: []}; }
+  exRaw = null;
+  return EXITS;
+}
+const exitsAt = name => { const D = exitsData(); return D ? D.byStation[name] || [] : []; };
+/* Exit markers on the map once you're zoomed in to street level, like the signs at the station. */
+function drawExits(ctx, zoom){
+  if (zoom < BLD_FULL) return;
+  const D = exitsData(); if (!D || !D.all.length) return;
+  const a = clampN((zoom - BLD_FULL) / 4, 0, 1); if (a <= 0) return;
+  const sz = 15;
+  ctx.save(); ctx.globalAlpha = a; ctx.font = `700 10px ${getComputedStyle(document.body).getPropertyValue("--display") || "sans-serif"}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const x of D.all){
+    const X = sx(x.x), Y = sy(x.y);
+    if (X < -20 || Y < -20 || X > mW + 20 || Y > mH + 20) continue;
+    const w = Math.max(sz, ctx.measureText(x.label || "•").width + 7);
+    ctx.fillStyle = "#ffd200"; ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(X - w / 2, Y - sz / 2, w, sz, 3) : ctx.rect(X - w / 2, Y - sz / 2, w, sz); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#111"; ctx.fillText(x.label || "•", X, Y + 0.5);
+  }
+  ctx.restore();
+}
 function bldData(){
   if (BLD || !bldRaw) return BLD;
   const list = [], grid = new Map(), CELL = 250, cellKey = (cx, cy) => (cx + 2000) * 4000 + (cy + 2000);
@@ -3176,6 +3224,7 @@ function mapDraw(){
       ctx.stroke(); ctx.setLineDash([]);
     }
   }
+  try { drawExits(ctx, zoom); } catch(e){}
   // stations
   const r = clampN(lw * 0.62, 2, 5);
   for (const e of MSTN){
@@ -8221,10 +8270,39 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       <div><p class="hsub">Platform crowd${crowdFresh() ? ` · LTA, ${esc(crowdWindow())}` : ""}</p>${cws ? `<div class="hx-crowd">${cws}</div>` : `<p class="hint" style="margin:0">Crowd levels aren't available right now.</p>`}</div>
       ${typeof wxLine === "function" ? wxLine(e) : ""}`;
   }
+  /* Exits, and the places near each one (OpenStreetMap). */
+  function exitsHTML(name){
+    const list = exitsAt(name); if (!list.length) return "";
+    const D = exitsData();
+    const rows = list.map(x => `<li><span class="ex-tag">${x.label ? esc(x.label) : "•"}</span><span>${x.near.length
+      ? x.near.map(([n, k]) => `${esc(n)}<small> ${esc(k)}</small>`).join("<br>")
+      : `<span class="muted">No named places mapped next to this exit</span>`}</span></li>`).join("");
+    return `<div class="ex-sec"><p class="hsub">Exits</p><ul class="ex-list">${rows}</ul>
+      <div class="mi-act"><button class="btn ghost" type="button" data-hx="exmap">Show exits on map</button></div>
+      <p class="ex-src">Exits and nearby places: © OpenStreetMap contributors${D && D.at ? `, ${esc(D.at)}` : ""}. Each place is listed under its nearest exit, which may not match the station's own signs.</p></div>`;
+  }
+  /* Changing lines here: which lines you can change to, and where their trains go. */
+  const XPLAT = {"Jurong East": "NSL and EWL", "City Hall": "NSL and EWL", "Raffles Place": "NSL and EWL"};
+  function transferHTML(name){
+    const codes = byName[name] || [], lines = [...new Set(codes.map(([c]) => c))];
+    if (lines.length < 2) return "";
+    const iso = sgNow().iso;
+    const rows = lines.map(c => {
+      const L = LINES[c], act = activeStations(L, iso), cs = codes.filter(([l]) => l === c);
+      const live = cs.some(([, code]) => act.some(s => s[0] === code));
+      const ends = !live ? "Not open yet" : L.loop ? "Loop service" : [0, 1].map(d => dest(L, d, act)).filter(x => x !== name).map(x => `to ${esc(x)}`).join(" · ");
+      return `<li style="--c:var(--${c})"><span class="code" style="background:var(--${c})">${c === "CG" ? "CGL" : c}</span><span><b>${esc((H_LINE[c] && H_LINE[c].name) || L.name)}</b><br><small>${ends}</small></span></li>`;
+    }).join("");
+    const xp = XPLAT[name] ? `<p class="hint" style="margin:0">${esc(XPLAT[name])} trains stop across the same platform here for some directions, so some changes are just a walk across.</p>` : "";
+    return `<div class="ex-sec"><p class="hsub">Changing lines</p><ul class="tx-list">${rows}</ul>${xp}
+      <p class="ex-src">Follow the signs in the line's colour to its platforms. The trip planner allows 3 minutes for a change.</p></div>`;
+  }
+  window.stationGuideHTML = name => exitsHTML(name) + transferHTML(name);
   function stationStatic(name){
     const e = aByName(name), codes = (byName[name] || []);
     const lines = [...new Set(codes.map(([c]) => c))].map(c => (H_LINE[c] && H_LINE[c].name) || LINES[c].name);
     return `<div><p class="hsub">Live cam</p><button type="button" class="hx-cam" data-hx="cam"><span class="ic"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10.5l6-3.5v10l-6-3.5"/></svg></span><span><b>RailCam Singapore</b><small>Live train video · opens the Live cam</small></span><span>›</span></button></div>
+      ${transferHTML(name)}${exitsHTML(name)}
       <details class="hx-details"><summary>More about ${esc(name)}</summary>
         <div class="hfacts"><div><span>Codes</span><b>${codePills(codes)}</b></div><div><span>Lines</span><b>${esc(lines.join(", "))}</b></div></div>
         <div class="mi-act" style="margin-top:10px"><button class="btn ghost" type="button" data-hx="hist">Station history ›</button><button class="btn ghost" type="button" data-hx="map">Show on map</button><button class="btn ghost" type="button" data-hx="board">Line Board</button>${window.repMapBtn ? repMapBtn() : ""}</div>
@@ -8308,6 +8386,11 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     if (act === "model"){ if (H_MODEL[b.dataset.m]) histOpen("model", b.dataset.m); return; }
     if (act === "fav" && x.type === "station"){ isFav(x.name) ? delFav(x.name) : addFav(x.name); b.textContent = isFav(x.name) ? "★ On Home" : "☆ Add to Home"; return; }
     if (act === "map" && x.type === "station"){ const n = x.name; hxClose(); tripHide(); showView("trains"); setTrainView("map"); setTimeout(() => window.mapFocus && mapFocus(n), 60); return; }
+    if (act === "exmap" && x.type === "station"){ const n = x.name, e2 = aByName(n); hxClose(); tripHide(); showView("trains"); setTrainView("map");
+      setTimeout(() => { if (!e2) return; const ex = exitsAt(n), xs = ex.map(q => q.x).concat(e2.x), ys = ex.map(q => q.y).concat(e2.y);
+        const span = Math.max(260, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.5;
+        const s = Math.max(fitScale * (BLD_FULL + 4), Math.min(mW, mH) / span);
+        flyTo((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2, s); }, 80); return; }
     if (act === "board" && x.type === "station"){ const n = x.name, ls = (byName[n] || []).map(y => y[0]); hxClose(); showView("trains"); setTrainView("line"); select(ls.includes(current) ? current : ls[0], n); return; }
     if (act === "line" && x.type === "train"){ hxClose(); showView("trains"); setTrainView("line"); select(x.line); selTrain = x.id; tick(); return; }
     if (act === "report" && x.type === "station" && window.repOpen){ const e2 = aByName(x.name); if (e2){ hxClose(); repOpen(e2.codes[0].line, e2.codes[0].idx); } return; }

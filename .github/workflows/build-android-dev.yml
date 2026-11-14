@@ -66,13 +66,13 @@ jobs:
 
           ## Ask tab (chatbot)
 
-          The Ask tab answers questions about stations, lines and trains. Without a key it gives built-in answers from the app's own data. To let Claude answer instead:
+          The Ask tab answers questions about stations, lines and trains. Without a key it gives built-in answers from the app's own data. To let ChatGPT answer instead:
 
-          1. Get an API key at console.anthropic.com (API keys), and set a monthly spending limit there.
+          1. Get an API key at platform.openai.com (API keys), and set a monthly budget limit there.
           2. In your repository, open **Settings → Secrets and variables → Actions → New repository secret**.
-          3. Name it `ANTHROPIC_API_KEY`, paste the key, and save. Then build again.
+          3. Name it `OPENAI_API_KEY`, paste the key, and save. Then build again.
 
-          The key is built into the app scrambled, and the app only ever sends it to Anthropic. Anyone with a copy of the app could still dig it out, which is why the spending limit matters. Each phone can ask Claude up to 60 questions a day; after that, or when offline, the app falls back to built-in answers.
+          The key is built into the app scrambled, and the app only ever sends it to OpenAI. Anyone with a copy of the app could still dig it out, which is why the spending limit matters. Each phone can ask ChatGPT up to 60 questions a day; after that, or when offline, the app falls back to built-in answers.
 
           ## 3D buildings
 
@@ -129,7 +129,7 @@ jobs:
                   // Public GitHub repo the app checks for updates, e.g. yourname/mrt-tracker-releases (empty = off).
                   buildConfigField 'String', 'UPDATE_REPO', '"' + (project.findProperty('updateRepo') ?: '').toString().replaceAll('[^A-Za-z0-9._/-]', '') + '"'
                   buildConfigField 'String', 'LTA_KEY_X', '"ac482e340c45fb8ce3d416f40eeba0afa7c59acac8579667"'
-                  // Claude API key for the Ask tab, from the ANTHROPIC_API_KEY GitHub secret (none = built-in answers only).
+                  // OpenAI API key for the Ask tab (ChatGPT), from the OPENAI_API_KEY GitHub secret (none = built-in answers only).
                   buildConfigField 'String', 'AI_KEY_X', '"' + scrambleKey((project.findProperty('aiKey') ?: '').toString()) + '"'
               }
 
@@ -473,9 +473,9 @@ jobs:
                       + "frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'unsafe-inline'; img-src https: data:; "
                       + "base-uri 'none'; form-action 'none'";
           
-              /** The Claude API (Anthropic), used by the Ask tab, and the model it uses. */
-              private static final String AI_URL = "https://api.anthropic.com/v1/messages";
-              private static final String AI_MODEL = "claude-haiku-5-5";
+              /** The OpenAI API (ChatGPT), used by the Ask tab, and the model it uses. */
+              private static final String AI_URL = "https://api.openai.com/v1/chat/completions";
+              private static final String AI_MODEL = "gpt-5-mini";
           
               private WebView web;
               private String cachedKey = null;
@@ -899,14 +899,14 @@ jobs:
                       }).start();
                   }
           
-                  /** True when a Claude API key was built into the app, so the Ask tab can use Claude. */
+                  /** True when an OpenAI API key was built into the app, so the Ask tab can use ChatGPT. */
                   @JavascriptInterface
                   public boolean hasAi() {
                       return !aiKey().isEmpty();
                   }
           
                   /**
-                   * Sends one Ask-tab request to the Claude API and returns the reply to the page.
+                   * Sends one Ask-tab request to the OpenAI API (ChatGPT) and returns the reply to the page.
                    * The key is added here and never given to the page. Whatever the page sends, the app
                    * only uses its own model and caps the answer length, so a request can't run up costs.
                    */
@@ -918,11 +918,16 @@ jobs:
                           HttpURLConnection conn = null;
                           try {
                               String key = aiKey();
-                              if (key.isEmpty()) throw new SecurityException("No Claude key in this build");
+                              if (key.isEmpty()) throw new SecurityException("No OpenAI key in this build");
                               JSONObject req = new JSONObject(request);
                               req.put("model", AI_MODEL);
-                              req.put("max_tokens", Math.max(1, Math.min(req.optInt("max_tokens", 800), 1024)));
+                              req.put("max_completion_tokens", Math.max(1, Math.min(req.optInt("max_completion_tokens", 2000), 2000)));
+                              req.put("reasoning_effort", "low");
+                              req.remove("max_tokens");
                               req.remove("stream");
+                              req.remove("stream_options");
+                              req.remove("n");
+                              req.remove("service_tier");
                               byte[] out = req.toString().getBytes(StandardCharsets.UTF_8);
                               if (out.length > 200000) throw new java.io.IOException("Request too large");
                               conn = (HttpURLConnection) new URL(AI_URL).openConnection();
@@ -931,8 +936,7 @@ jobs:
                               conn.setConnectTimeout(15000);
                               conn.setReadTimeout(60000);
                               conn.setRequestProperty("content-type", "application/json");
-                              conn.setRequestProperty("x-api-key", key);
-                              conn.setRequestProperty("anthropic-version", "2023-06-01");
+                              conn.setRequestProperty("Authorization", "Bearer " + key);
                               conn.setFixedLengthStreamingMode(out.length);
                               try (java.io.OutputStream os = conn.getOutputStream()) {
                                   os.write(out);
@@ -1285,7 +1289,7 @@ jobs:
                   return cachedKey;
               }
           
-              /** The Claude API key for the Ask tab, from the build setting AI_KEY_X ("" if none was set). */
+              /** The OpenAI API key for the Ask tab, from the build setting AI_KEY_X ("" if none was set). */
               private synchronized String aiKey() {
                   if (cachedAiKey == null) cachedAiKey = unscramble(BuildConfig.AI_KEY_X);
                   return cachedAiKey;
@@ -3512,13 +3516,13 @@ jobs:
 
       - name: Build the app
         env:
-          # Claude API key for the Ask tab (optional). Without it, the Ask tab gives built-in answers.
-          ORG_GRADLE_PROJECT_aiKey: ${{ secrets.ANTHROPIC_API_KEY }}
+          # OpenAI API key for the Ask tab (optional). Without it, the Ask tab gives built-in answers.
+          ORG_GRADLE_PROJECT_aiKey: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ -n "$ORG_GRADLE_PROJECT_aiKey" ]; then
-            echo "🤖 **Ask tab:** Claude answers (the ANTHROPIC_API_KEY secret is set)." >> "$GITHUB_STEP_SUMMARY"
+            echo "🤖 **Ask tab:** ChatGPT answers (the OPENAI_API_KEY secret is set)." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "🤖 **Ask tab:** built-in answers only. Add an ANTHROPIC_API_KEY secret to let Claude answer." >> "$GITHUB_STEP_SUMMARY"
+            echo "🤖 **Ask tab:** built-in answers only. Add an OPENAI_API_KEY secret to let ChatGPT answer." >> "$GITHUB_STEP_SUMMARY"
           fi
           # Version from the build time, so every new build installs over the last one,
           # whatever this workflow file is called.

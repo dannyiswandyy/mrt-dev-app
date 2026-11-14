@@ -3426,6 +3426,21 @@ jobs:
               p.write_text(h,encoding='utf-8')
           PY
 
+      - name: Diagnose terminal reversal timing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          h=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
+          print('TERMINAL_TIMING_DIAG')
+          for m in re.finditer(r'210000|3\\.5|turn.?back|reverse|terminal', h, re.I):
+              a=max(0,m.start()-500); b=min(len(h),m.end()+900)
+              s=h[a:b].replace('\\n',' ')
+              if '210000' in s or 'turn' in s.lower() or 'reverse' in s.lower():
+                  print('--- MATCH @',m.start(),'---')
+                  print(s[:2200])
+          PY
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

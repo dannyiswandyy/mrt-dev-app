@@ -276,6 +276,11 @@ button.devtag{border:0;cursor:pointer;display:inline-flex;align-items:center;gap
 .ftimes .ftsb{padding-left:12px;color:var(--muted);font-size:12px}
 .ftimes .ftsb b{color:var(--fg);font-weight:600}
 .train.short .tic .body{stroke:var(--fg);stroke-width:1.6;stroke-dasharray:3 2}
+.tic{overflow:visible}
+.tic .lastbar{display:none}
+.train.last .tic .lastbar{display:block;fill:var(--fg)}
+.ltc{font:700 9.5px var(--display);font-style:normal;color:var(--panel);background:var(--fg);border-radius:3px;padding:0 3px;margin-left:4px;letter-spacing:.04em;vertical-align:1px}
+.sb.last{background:var(--fg);color:var(--panel);border-color:var(--fg)}
 /*DEV:START*/
 /* trains a spotter reported (MRT Dev): a ring round them; dashed when the report matched a train already shown */
 .train.rep::after,.train.seen::after{content:"";position:absolute;left:-4px;top:-2px;width:28px;height:28px;border:2px solid var(--fg);border-radius:50%;pointer-events:none;z-index:2}
@@ -2172,6 +2177,50 @@ function stopTimes(code, i, dir, now){
   return {first: all[0].m, last: (full.length ? full : all)[(full.length ? full : all).length - 1].m, sb: groups,
     toward: dest(L, dir, act), official: !!ttTrips(code, now.iso)};
 }
+/* ---------- Last trains ----------
+   In each direction of each line, the last train of the day going all the way (the published last train), and the
+   very last train of all if that's a later special-bound one. They're marked with a bar across the arrow's tip on the
+   map (2D and 3D) and the Line Board, "last train" on their cards, and LAST next to their time in next-train lists. */
+const lastCache = {};
+function lastTrainIds(code, now){
+  const k = code + "|" + now.iso + "|" + (TT && !SIM.est ? "t" : "e");
+  if (lastCache[k]) return lastCache[k];
+  const L = LINES[code], act = activeStations(L, now.iso), n = act.length, ids = new Set(), ttl = ttTrips(code, now.iso);
+  for (const dir of [0, 1]){
+    let full = null, any = null;
+    const see = (id, end, to) => {
+      if (!any || end > any.end) any = {id, end};
+      if (!isShortTo(L, dir, act, to) && (!full || end > full.end)) full = {id, end};
+    };
+    if (ttl){
+      for (const r of ttl){ const p = r.p; if ((p.d > 0 ? 0 : 1) === dir) see(`${code}t${r.s}p${r.pi}`, r.s + p.end, p.to); }
+    } else if (n){
+      const T = legsOf(code, dir, n);
+      for (const r of runsFor(code, dayOf(now), dir)) see(code + dir + r.t, (r.t + T.off[r.b]) * 60, dir ? n - 1 - r.b : r.b);
+    }
+    if (full) ids.add(full.id);
+    if (any && (!full || any.end > full.end)) ids.add(any.id);
+  }
+  return lastCache[k] = ids;
+}
+const isLastTrain = (code, t, now) => !!t && !t.rep && lastTrainIds(code, now || sgNow()).has(t.id);
+/* Is the train arriving m minutes from now at stop i the last one going there today (all the way, or the very last)? */
+function isLastCall(code, i, dir, now, m){
+  const all = dayCalls(code, i, dir, now); if (!all.length) return false;
+  const L = LINES[code], act = activeStations(L, now.iso), at = now.mins + m;
+  const full = all.filter(x => !isShortTo(L, dir, act, x.to)), lastFull = full.length ? full[full.length - 1].m : -1, lastAny = all[all.length - 1].m;
+  return Math.abs(at - lastFull) < 0.6 || Math.abs(at - lastAny) < 0.6;
+}
+const lastTag = '<i class="ltc" title="Last train">LAST</i>';
+/* The bar across a last train's arrow tip, on a 2D canvas: (X, Y) the arrow's centre, (ux, uy) the way it's going. */
+function drawLastBar(ctx, X, Y, ux, uy, r, col, rim){
+  const cx = X + ux * r * 2.05, cy = Y + uy * r * 2.05, hx = -uy * r * 1.15, hy = ux * r * 1.15;
+  ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(cx - hx, cy - hy); ctx.lineTo(cx + hx, cy + hy);
+  ctx.lineWidth = Math.max(3.6, r * 0.95); ctx.strokeStyle = rim; ctx.stroke();
+  ctx.lineWidth = Math.max(2, r * 0.5); ctx.strokeStyle = col; ctx.stroke();
+  ctx.lineCap = "butt";
+}
 /* "First 5:31am · Last 11:48pm", then the special-bound trains: every time when there are a few, else the range. */
 function stopTimesHTML(code, i, dir, now, withLine){
   const s = stopTimes(code, i, dir, now); if (!s) return "";
@@ -2295,7 +2344,8 @@ let trainEls = {}, selTrain = null;
 /* Front view of a train; the small arrow shows its direction of travel. */
 function trainSVG(dir){
   const arrow = dir ? '<path class="arrow" d="M11 0 L15 3.5 H7 Z"/>' : '<path class="arrow" d="M11 26 L15 22.5 H7 Z"/>';
-  return `<svg class="tic" viewBox="0 0 22 26" aria-hidden="true">${arrow}
+  const bar = dir ? '<rect class="lastbar" x="4" y="-3.2" width="14" height="2.4" rx="1.2"/>' : '<rect class="lastbar" x="4" y="26.8" width="14" height="2.4" rx="1.2"/>';
+  return `<svg class="tic" viewBox="0 0 22 26" aria-hidden="true">${arrow}${bar}
     <rect class="body" x="2.5" y="4" width="17" height="18" rx="5"/>
     <rect class="win" x="5.5" y="7" width="11" height="6" rx="1.5"/>
     <circle class="lamp" cx="7" cy="17.5" r="1.5"/><circle class="lamp" cx="15" cy="17.5" r="1.5"/></svg>`;
@@ -2335,7 +2385,8 @@ function tick(){
     const b = i > 0 ? nextArrivals(current, i, 1, now, 3) : [];
     // a special-bound next train shows the code of the station it ends at
     const sbc = (d, arr) => arr.length && isShortTo(L, d, act, arr.to[0]) ? `<i class="sbc" title="Ends at ${esc(act[arr.to[0]][1])}">→${act[arr.to[0]][0]}</i>` : "";
-    setHTML(nx, `<span>${a.length ? "↓ <em>"+fmt(a[0])+"</em>"+sbc(0, a) : "&nbsp;"}</span><span>${b.length ? "↑ <em>"+fmt(b[0])+"</em>"+sbc(1, b) : "&nbsp;"}</span>`);
+    const lc = (d, arr) => arr.length && isLastCall(current, i, d, now, arr[0]) ? lastTag : "";
+    setHTML(nx, `<span>${a.length ? "↓ <em>"+fmt(a[0])+"</em>"+sbc(0, a)+lc(0, a) : "&nbsp;"}</span><span>${b.length ? "↑ <em>"+fmt(b[0])+"</em>"+sbc(1, b)+lc(1, b) : "&nbsp;"}</span>`);
     row.classList.toggle("open", i === openIdx);
     if (i === openIdx){
       dt.hidden = false;
@@ -2347,9 +2398,9 @@ function tick(){
         arr.forEach((m, k) => {
           const sb = isShortTo(L, d, act, arr.to[k]), name = sb ? endsName(L, d, act, arr.to[k]) : dest(L, d, act);
           let g = groups.find(x => x.name === name); if (!g) groups.push(g = {name, sb, ms: []});
-          g.ms.push(m); if (sb) anyShort = true;
+          g.ms.push(fmt(m) + (isLastCall(current, i, d, now, m) ? lastTag : "")); if (sb) anyShort = true;
         });
-        return groups.map(g => `<div${g.sb ? ' class="sbrow"' : ""}><span>${esc(toW(g.name))}${g.sb && !L.bound ? `<span class="sb">special-bound</span>` : ""}</span><span class="t">${g.ms.map(fmt).join(" · ")}</span></div>`).join("");
+        return groups.map(g => `<div${g.sb ? ' class="sbrow"' : ""}><span>${esc(toW(g.name))}${g.sb && !L.bound ? `<span class="sb">special-bound</span>` : ""}</span><span class="t">${g.ms.join(" · ")}</span></div>`).join("");
       };
       const rows = (i < n-1 ? line(0, a) : "") + (i > 0 ? line(1, b) : "");
       const ft = (i < n-1 ? stopTimesHTML(current, i, 0, now) : "") + (i > 0 ? stopTimesHTML(current, i, 1, now) : "");
@@ -2371,6 +2422,7 @@ function tick(){
       el.onclick = ev => { ev.stopPropagation(); selTrain = selTrain === tr.id ? null : tr.id; tick(); };
       el._dep = tr.dep; el._dir = tr.dir; el._ref = tr.ref || null; el._a = tr.a || 0; el._b = tr.b;
       el.classList.toggle("short", isShortTo(L, tr.dir, act, tr.to));
+      el.classList.toggle("last", isLastTrain(current, tr, now));
       el._rep = !!tr.rep; el.classList.toggle("rep", !!tr.rep);
       el.style.setProperty("--d", (-(tr.dep * 7.3) % 2).toFixed(2) + "s");   // stagger the pulses
       $("lanes").appendChild(el); trainEls[tr.id] = el;
@@ -2385,7 +2437,7 @@ function tick(){
   const terminus = tr => destOf(L, tr.dir, act, tr.to);
   for (const tr of running){
     const el = trainEls[tr.id], stop = act[tr.next][1];
-    el.setAttribute("aria-label", `${trainToW(terminus(tr))}${isShortTo(L, tr.dir, act, tr.to) && !L.bound ? " (special-bound)" : ""}, ${tr.atStation ? "at" : "next stop"} ${stop}`);
+    el.setAttribute("aria-label", `${isLastTrain(current, tr, now) ? "Last train · " : ""}${trainToW(terminus(tr))}${isShortTo(L, tr.dir, act, tr.to) && !L.bound ? " (special-bound)" : ""}, ${tr.atStation ? "at" : "next stop"} ${stop}`);
     el.classList.toggle("sel", tr.id === selTrain);
     el.classList.toggle("seen", !!(window.repSeen && repSeen(tr.id)));
   }
@@ -2398,7 +2450,7 @@ function tick(){
     const where = s.atStation ? `Now at <b>${stop}</b>` : `Next stop <b>${stop}</b>`;
     setHTML($("trainInfo"), `<div class="tinfo">
       <div>${trainSVG(s.dir)}</div>
-      <div><b>${esc(trainToW(terminus(s)))}</b>${isShortTo(L, s.dir, act, s.to) && !L.bound ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(s) : ""}<br>${where}${window.repWhen && repWhen(s) ? `<br><small class="muted">${repWhen(s)}</small>` : ""}</div>
+      <div><b>${esc(trainToW(terminus(s)))}</b>${isLastTrain(current, s, now) ? `<span class="sb last">last train</span>` : ""}${isShortTo(L, s.dir, act, s.to) && !L.bound ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(s) : ""}<br>${where}${window.repWhen && repWhen(s) ? `<br><small class="muted">${repWhen(s)}</small>` : ""}</div>
       <span class="eta">${s.atStation ? "Boarding" : s.eta < 0.5 ? "Arriving" : "~" + Math.max(1, Math.round(s.eta)) + " min"}</span>
       <button type="button" aria-label="Close" id="tclose">×</button></div>`);
     $("tclose").onclick = () => { selTrain = null; tick(); };
@@ -3551,6 +3603,7 @@ function mapDraw(){
       ctx.closePath();
       ctx.fillStyle = sb ? MC.bg : MC[c]; ctx.fill();
       ctx.lineWidth = sel ? 2.5 : sb ? 2 : 1.3; ctx.strokeStyle = sel ? MC.fg : sb ? MC[c] : MC.bg; ctx.stroke();
+      if (isLastTrain(c, t, now)) drawLastBar(ctx, X, Y, ux, uy, tr * k, MC[c], MC.bg);   // the last train: a bar across its tip
       if (t.rep || (window.repSeen && repSeen(t.id))){            // reported or confirmed by a spotter: a ring round it
         ctx.beginPath(); ctx.arc(X, Y, tr * 2.1 * k, 0, Math.PI * 2);
         ctx.lineWidth = 1.6; ctx.strokeStyle = MC.fg; ctx.setLineDash(t.rep ? [] : [2, 2]); ctx.stroke(); ctx.setLineDash([]);
@@ -3639,7 +3692,7 @@ function mapInfoHTML(){
     const L = LINES[mSel.line], t = trainsOn(mSel.line, now).find(x => x.id === mSel.id);
     if (!t){ mSel = null; return mapInfoHTML(); }
     const act = activeStations(L, now.iso), stop = act[t.next][1];
-    return `<div class="mi-h"><span class="code" style="background:var(--${mSel.line})">${mSel.line === "CG" ? "CGL" : mSel.line}</span><b>${esc(trainToW(destOf(L, t.dir, act, t.to)))}</b>${!L.bound && isShortTo(L, t.dir, act, t.to) ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(t) : ""}<button class="mi-x" type="button" data-act="close" aria-label="Close">×</button></div>
+    return `<div class="mi-h"><span class="code" style="background:var(--${mSel.line})">${mSel.line === "CG" ? "CGL" : mSel.line}</span><b>${esc(trainToW(destOf(L, t.dir, act, t.to)))}</b>${isLastTrain(mSel.line, t, now) ? `<span class="sb last">last train</span>` : ""}${!L.bound && isShortTo(L, t.dir, act, t.to) ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(t) : ""}<button class="mi-x" type="button" data-act="close" aria-label="Close">×</button></div>
       <div class="mi-row"><span>${t.atStation ? `Now at <b>${esc(stop)}</b>` : `Next stop <b>${esc(stop)}</b>`}</span><span class="mi-t">${t.atStation ? "Boarding" : t.eta < 0.5 ? "Arriving" : "~" + Math.max(1, Math.round(t.eta)) + " min"}</span></div>${window.repWhen && repWhen(t) ? `<div class="mi-row"><span>${repWhen(t)}</span></div>` : ""}
       <div class="mi-act"><button class="btn ghost" type="button" data-act="line">Open on Line Board</button></div>`;
   }
@@ -3655,7 +3708,7 @@ function mapInfoHTML(){
     for (const d of [0, 1]){
       const i = idxs.find(i => L.bound ? !(d && i === 0) : d ? i > 0 : i < n - 1); if (i === undefined) continue;
       const arr = nextArrivals(x.line, i, d, now, 3);
-      const tms = arr.map((m, k) => isShortTo(L, d, act, arr.to[k]) ? `${fmt(m)}<i class="sbc" title="Ends at ${esc(act[arr.to[k]][1])}">→${act[arr.to[k]][0]}</i>` : fmt(m));
+      const tms = arr.map((m, k) => (isShortTo(L, d, act, arr.to[k]) ? `${fmt(m)}<i class="sbc" title="Ends at ${esc(act[arr.to[k]][1])}">→${act[arr.to[k]][0]}</i>` : fmt(m)) + (isLastCall(x.line, i, d, now, m) ? lastTag : ""));
       rows.push(`<button class="mi-row mi-go" type="button" data-act="lineat" data-line="${x.line}"><span>${codePills([[x.line, x.code]])}${esc(toW(dest(L, d, act)))}</span><span class="mi-t">${arr.length ? tms.join(" · ") : arr.cut ? "No service · disruption" : "No more trains"}</span></button>`);
     }
   }
@@ -7389,7 +7442,7 @@ const M3 = {on: false, ok: null, cam: {x: 0, z: 0, d: 6000, yaw: -0.35, pitch: 0
   const B = {};                  // shared buffers
   const tex = new Map();         // satellite tiles as textures
   const chunks = new Map();      // building meshes, one per 250 m cell
-  let hits = [], tags3 = [], lastT = 0, satBad = 0, satGood = 0;
+  let hits = [], tags3 = [], last3 = [], lastT = 0, satBad = 0, satGood = 0;
 
   /* ---- small maths ---- */
   const persp = (f, a, n, fa) => { const t = 1 / Math.tan(f / 2), r = 1 / (n - fa); return [t / a, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) * r, -1, 0, 0, 2 * fa * n * r, 0]; };
@@ -7748,14 +7801,14 @@ const M3 = {on: false, ok: null, cam: {x: 0, z: 0, d: 6000, yaw: -0.35, pitch: 0
     const p = P.ar, c = M3.cam; gl.useProgram(p.p); gl.uniformMatrix4fv(p.u.uM, false, VP); fogU(p);
     gl.bindBuffer(gl.ARRAY_BUFFER, B.arrow.b); attrib(p, "aP", 3, 4, 0); attrib(p, "aS", 1, 4, 3);
     const S = clampN(c.d * 0.011, 32, 260), dark = [0.04, 0.05, 0.07];
-    hits = []; tags3 = []; let total = 0;
+    hits = []; tags3 = []; last3 = []; let total = 0;
     const list = [];
     for (const code of MDRAW){
       const L = LINES[code], act = activeStations(L, now.iso), tr = trainsOn(code, now); total += tr.length;
       for (const t of tr){
         const [x, z, dx, dz] = posOn(code, t.idx), l = Math.hypot(dx, dz) || 1;
         const ux = (t.dir ? -dx : dx) / l, uz = (t.dir ? -dz : dz) / l, side = lineW(code) * 0.5 + S * 0.95;
-        list.push({code, t, x: x + uz * side, z: z - ux * side, ux, uz, sb: isShortTo(L, t.dir, act, t.to)});   // keep left, as in 2D
+        list.push({code, t, x: x + uz * side, z: z - ux * side, ux, uz, sb: isShortTo(L, t.dir, act, t.to), last: isLastTrain(code, t, now)});   // keep left, as in 2D
       }
     }
     // shadows first, flat on the ground
@@ -7782,6 +7835,10 @@ const M3 = {on: false, ok: null, cam: {x: 0, z: 0, d: 6000, yaw: -0.35, pitch: 0
       gl.uniformMatrix4fv(p.u.uO, false, model(a.x, y, a.z, a.ux, a.uz, S * k, S * k * 0.34));
       gl.drawArrays(gl.TRIANGLES, 0, B.arrow.n);
       const q = toScreen(a.x, y, a.z); if (q) hits.push({line: a.code, id: a.t.id, x: q[0], y: q[1], r: Math.max(16, S * k * 1.3 / (q[2] || 1) * H / (2 * Math.tan(M3.fov / 2)))});
+      if (a.last && q){                                           // the last train: a bar across its tip, drawn in the overlay
+        const q2 = toScreen(a.x + a.ux * S * k, y, a.z + a.uz * S * k);
+        if (q2){ const dx = q2[0] - q[0], dy = q2[1] - q[1], l = Math.hypot(dx, dy) || 1; last3.push({x: q[0], y: q[1], ux: dx / l, uy: dy / l, r: Math.max(3.5, Math.min(12, l * 0.62)), c: a.code}); }
+      }
       const tag = q && window.spotTag ? spotTag(a.code, a.t, now.iso) : null;   // you logged this train: its tag goes in the overlay
       if (tag && (c.d <= 6000 || sel)) tags3.push({x: q[0], y: q[1], r: Math.min(26, S * k * 0.9 / (q[2] || 1) * H / (2 * Math.tan(M3.fov / 2))), tag});
     }
@@ -7836,6 +7893,7 @@ const M3 = {on: false, ok: null, cam: {x: 0, z: 0, d: 6000, yaw: -0.35, pitch: 0
       octx.fillStyle = "#fff"; octx.textAlign = "left"; octx.fillText(e.name, x + 7, y + 0.5);
       if (codes) canvasPills(octx, codes, x + 3, y + h / 2 + ph / 2 + 1, pfs);
     }
+    for (const b of last3) if (b.x > -40 && b.x < W + 40 && b.y > -40 && b.y < H + 40) drawLastBar(octx, b.x, b.y, b.ux, b.uy, b.r, MC[b.c], "#0b0e12");   // last trains
     for (const g of tags3) if (g.x > -40 && g.x < W + 40 && g.y > -40 && g.y < H + 40) drawSpotTag(octx, g.x, g.y, Math.max(8, g.r), g.tag, 11, placed);
   }
 
@@ -8414,7 +8472,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       for (const d of [0, 1]){
         const i = idxs.find(i => L.bound ? !(d && i === 0) : d ? i > 0 : i < n - 1); if (i === undefined) continue;
         const arr = nextArrivals(x.line, i, d, now, cnt || 3), to = dest(L, d, act);
-        const items = arr.map((m, k) => ({m, sb: isShortTo(L, d, act, arr.to[k]) ? act[arr.to[k]] : null}));
+        const items = arr.map((m, k) => ({m, sb: isShortTo(L, d, act, arr.to[k]) ? act[arr.to[k]] : null, last: isLastCall(x.line, i, d, now, m)}));
         const dis = segs.some(sg => (sg.lines || [sg.line]).includes(x.line) && (sg.codes || []).includes(x.code) && dirOk(sg, to));
         out.push({line: x.line, code: x.code, to, items, dis});
       }
@@ -8514,9 +8572,9 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       if (r.opens){ rows.push(`<div style="--c:var(--${r.line})"><span>${codePills([[r.line, r.code]])}Opens ${esc(r.opens)}</span></div>`); continue; }
       if (!r.items.length){ rows.push(`<div style="--c:var(--${r.line})"><span>${codePills([[r.line, r.code]])}${esc(toW(r.to))}</span><span class="t">${r.dis ? "No service · disruption" : "No more trains"}</span></div>`); continue; }
       const groups = [];
-      for (const it of r.items){ const nm = it.sb ? (BOUND_RE.test(r.to) ? `${r.to} · ends at ${it.sb[1]}` : it.sb[1]) : r.to; let g = groups.find(x => x.nm === nm); if (!g) groups.push(g = {nm, sb: !!it.sb, ms: []}); g.ms.push(it.m); if (it.sb && !BOUND_RE.test(r.to)) anySb = true; }
+      for (const it of r.items){ const nm = it.sb ? (BOUND_RE.test(r.to) ? `${r.to} · ends at ${it.sb[1]}` : it.sb[1]) : r.to; let g = groups.find(x => x.nm === nm); if (!g) groups.push(g = {nm, sb: !!it.sb, ms: [], ls: []}); g.ms.push(it.m); g.ls.push(it.last); if (it.sb && !BOUND_RE.test(r.to)) anySb = true; }
       if (r.dis) anyDis = true;
-      for (const g of groups) rows.push(`<div style="--c:var(--${r.line})"${g.sb ? ' class="sbrow"' : ""}><span>${codePills([[r.line, r.code]])}${esc(toW(g.nm))}${g.sb && !BOUND_RE.test(r.to) ? `<span class="sb">special-bound</span>` : ""}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span><span class="t"><em>${fmt(g.ms[0])}</em>${g.ms.slice(1).map(m => " · " + mins(m)).join("")}</span></div>`);
+      for (const g of groups) rows.push(`<div style="--c:var(--${r.line})"${g.sb ? ' class="sbrow"' : ""}><span>${codePills([[r.line, r.code]])}${esc(toW(g.nm))}${g.sb && !BOUND_RE.test(r.to) ? `<span class="sb">special-bound</span>` : ""}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span><span class="t"><em>${fmt(g.ms[0])}</em>${g.ls[0] ? lastTag : ""}${g.ms.slice(1).map((m, k) => " · " + mins(m) + (g.ls[k + 1] ? lastTag : "")).join("")}</span></div>`);
     }
     const seen = new Set(), cws = e.codes.filter(x => !seen.has(x.code) && seen.add(x.code)).map(x => { const c = crowdChip(x.code); return c ? `<span>${codePills([[x.line, x.code]])}${c}</span>` : ""; }).join("");
     return `<div><p class="hsub">Next trains${TT && !SIM.est ? " · LTA timetable" : " · estimated"}</p><div class="plat">${rows.join("")}</div>
@@ -8540,7 +8598,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     }
     const h = rows.join("");
     return h ? `<div><p class="hsub">First and last trains today${TT && !SIM.est ? " · LTA timetable" : " · estimated"}</p><div class="plat ftimes">${h}</div>
-      <p class="hint">Last is the last train going all the way. Special-bound trains end at the station shown instead.</p></div>` : "";
+      <p class="hint">Last is the last train going all the way (marked <i class="ltc">LAST</i> in next trains, and with a bar across its arrow on the map). Special-bound trains end at the station shown instead.</p></div>` : "";
   }
   /* Exits, and the places near each one (OpenStreetMap). */
   function exitsHTML(name){
@@ -8597,6 +8655,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
         <div><span>Bound</span><b>${esc(full)}</b><small>direction of travel</small></div>
         <div><span>Ends at</span><b>${esc(BOUND_RE.test(to) ? (sb ? String(to).split(" ends at ")[1] : "Keeps going") : to)}</b><small>${BOUND_RE.test(to) ? (sb ? "ends early" : "round the loop") : sb ? "special-bound" : "runs the whole way"}</small></div>
       </div>
+      ${isLastTrain(x.line, t, T.now) ? `<p class="hint" style="margin:0"><b>Last train</b> ${sb ? "of the day this way" : "going all the way"} today. After it, ${sb ? "no more trains run this way tonight" : "only special-bound trains (if any) run this way"}.</p>` : ""}
       ${window.spotTagHTML ? spotTagHTML(x.line, t, T.now.iso) : ""}
       ${window.rtTrainNote ? rtTrainNote(x.line, t) : ""}
       ${sb ? `<p class="hint" style="margin:0">${BOUND_RE.test(to) ? `This train ends at <b>${esc(String(to).split(" ends at ")[1])}</b> instead of going on round the loop.` : `This train ends at <b>${esc(to)}</b> instead of going all the way to ${esc(full)}.`} On the map it's drawn hollow.</p>` : ""}`;
@@ -8613,7 +8672,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       return [`${codePills(byName[x.name] || [])} Station`, x.name];
     }
     const T = trainNow(x); if (!T) return null;
-    return [`${lineChip(x.line, x.line === "CG" ? "CGL" : x.line)} ${esc(T.L.name)}${T.sb ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(T.t) : ""}`, trainToW(T.to)];
+    return [`${lineChip(x.line, x.line === "CG" ? "CGL" : x.line)} ${esc(T.L.name)}${isLastTrain(x.line, T.t, T.now) ? `<span class="sb last">last train</span>` : ""}${T.sb ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(T.t) : ""}`, trainToW(T.to)];
   }
   function hxRender(){
     if (!HX) return;

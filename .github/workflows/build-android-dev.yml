@@ -3432,7 +3432,7 @@ jobs:
 
           PY
           echo "=== TIMETABLE FUNCTION SIGNATURES ==="
-          python3 -c 'import re; h=open("mrt-tracker-app/app/src/main/assets/index.html",encoding="utf-8").read(); [(print(m.group(0)), print(h[max(0,m.start()-300):m.start()+1800])) for m in re.finditer(r"function\\s+(?:trainsOn|nextArrivals|lineCuts|cutTrain)\\s*\\([^)]*\\)",h)]'
+          grep -nE 'function (trainsOn|nextArrivals|lineCuts|cutTrain)' mrt-tracker-app/app/src/main/assets/index.html | head -20 || true
 
       - uses: actions/setup-java@v4
         with:

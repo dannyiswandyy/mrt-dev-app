@@ -109,7 +109,7 @@ def ask(query, what):
 
 def overpass_entrances():
     """Every station entrance in Singapore: a small, quick request."""
-    return ask(f'[out:json][timeout:120];node["railway"~"^(subway_entrance|train_station_entrance)$"]({BBOX});out tags qt;', "Exits")
+    return ask(f'[out:json][timeout:120];node["railway"~"^(subway_entrance|train_station_entrance)$"]({BBOX});out body qt;', "Exits")
 
 def overpass_places():
     """Named places of the kinds in KINDS across Singapore, as single points (centres for areas)."""
@@ -243,6 +243,8 @@ def main():
         if old:
             use(cached, "⚠️ Keeping the saved copy")
             return
+    n_in = sum(1 for e in elements if (e.get("tags") or {}).get("railway") in ("subway_entrance", "train_station_entrance"))
+    say(f"OpenStreetMap sent {n_in:,} station entrances and {len(elements) - n_in:,} places.")
     x = pack(elements, st)
     if not x:
         say("⚠️ No exits came back, so station pages will have no exits this time.")

@@ -1,30 +1,102 @@
+# MRT Tracker - Android app builder
+# Legacy good-map baseline restored; keep this workflow self-contained.
+# This one file holds the whole app. Every time it is saved on GitHub, it builds
+# the app and publishes the .apk under Releases.
+#
+# There are two copies of this file, which differ only in the lines from here to CHANNEL:
+#   build-android.yml      builds MRT Tracker (beta), the app you use day to day
+#   build-android-dev.yml  builds MRT Dev, a separate app for trying new features first
+# Each one only builds when that file itself is saved (or from Actions > Run workflow).
 name: Build MRT Dev app
+
 on:
   push:
     paths:
       - .github/workflows/build-android-dev.yml
   workflow_dispatch:
+
 permissions:
   contents: write
+
 env:
   CHANNEL: dev
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Write the app project
         run: |
           rm -rf mrt-tracker-app
           mkdir -p 'mrt-tracker-app'
+          cat > 'mrt-tracker-app/README.md' <<'MRTAPP_EOF'
+          # MRT Tracker (Android)
+
+          A small Android app that shows the MRT Train Tracker full screen. The tracker page is bundled inside the app (`app/src/main/assets/index.html`), so trains and timings work offline; the internet is only used for fonts.
+
+          ## Build with GitHub (no computer needed)
+
+          The easiest way is the single file `build-android.yml`, which contains this whole project:
+
+          1. Create a new **private** repository on github.com.
+          2. Add the file at `.github/workflows/build-android.yml`.
+          3. Open the **Actions** tab and wait for the green tick (about 5 minutes).
+          4. Open **Releases → latest** and download `mrt-tracker.apk` on your phone.
+
+          Each new build installs over the previous one, because the first build saves a signing key to `signing/mrt-tracker.jks` in your repository.
+
+          ## Two apps: MRT Tracker and MRT Dev
+
+          There are two copies of the workflow file in `.github/workflows`, which differ only in a few lines at the top:
+
+          - `build-android.yml` builds **MRT Tracker**, the beta app you use day to day. Its Releases entry is "MRT Tracker …".
+          - `build-android-dev.yml` builds **MRT Dev**, a separate app with an orange icon and a DEV badge, for trying new features first. Its Releases entry is the "MRT Dev …" pre-release, with `mrt-dev.apk`.
+
+          Each one only builds when that file itself is saved, so trying something in MRT Dev never changes MRT Tracker. Both can be installed at the same time and keep their own settings. Each app checks for its own updates. To move a feature into MRT Tracker, save the matching `build-android.yml`.
+
+          ## LTA timetable
+
+          Every build downloads LTA's official train timetable (GTFS Schedule (Train), LTA DataMall) and packs it into the app, so train times follow the real schedule. Each good download is also saved in the repository as `data/lta-timetable.json`. If LTA's download fails during a build, that saved copy is packed instead, so every version of the app has the timetable. The app's Settings (under Updates) shows which timetable it has and when it was downloaded.
+
+          ## Live weather (MRT Dev)
+
+          The map shows live weather from the National Environment Agency (NEA), via data.gov.sg: the 2-hour forecast, rain measured at rain gauges, temperature, wind and lightning, refreshed every 10 minutes. On the 2D map, rain falls where the gauges measure it, clouds drift over cloudy or showery areas, hazy areas get a tint, and lightning flashes where it's detected or storms are forecast. Tap the weather chip for details, or to turn the weather on the map off.
+
+          ## Ask tab (chatbot)
+
+          The Ask tab answers questions about stations, lines and trains. Without a key it gives built-in answers from the app's own data. To let Claude answer instead:
+
+          1. Get an API key at console.anthropic.com (API keys), and set a monthly spending limit there.
+          2. In your repository, open **Settings → Secrets and variables → Actions → New repository secret**.
+          3. Name it `ANTHROPIC_API_KEY`, paste the key, and save. Then build again.
+
+          The key is built into the app scrambled, and the app only ever sends it to Anthropic. Anyone with a copy of the app could still dig it out, which is why the spending limit matters. Each phone can ask Claude up to 60 questions a day; after that, or when offline, the app falls back to built-in answers.
+
+          ## 3D buildings
+
+          When zoomed in on the 2D map, buildings near each station rise up in 3D. Their outlines and heights come from OpenStreetMap (© OpenStreetMap contributors), downloaded while GitHub builds the app and packed into it. GitHub keeps a copy between builds, so OpenStreetMap is only asked again once a month. If the download fails, the last copy is used, and the build never fails because of it. The **3D** button on the map turns them off.
+
+          ## Build with Android Studio
+
+          Open this folder in Android Studio and run **Build → Build APK(s)**. A debug build needs no signing key.
+
+          ## Updating the tracker
+
+          Replace `app/src/main/assets/index.html` and build again. (Inside the workflow file the page is stored compressed, as gzip then base64, because GitHub won't run a workflow file over 500 KB; the workflow file is made from this project, so change the project and remake it.)
+          MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app'
           cat > 'mrt-tracker-app/app/build.gradle' <<'MRTAPP_EOF'
+
           plugins {
               id 'com.android.application'
           }
+
           // Which app to build: "beta" is MRT Tracker; "dev" is MRT Tracker, a separate app (its own name, icon
           // and settings) for trying new features before they go into MRT Tracker. Set by the workflow file.
           def channel = (project.findProperty('channel') ?: 'beta').toString() == 'dev' ? 'dev' : 'beta'
+
           // Scrambles a key with a mask made from the app's package name; the app unscrambles it in memory.
           def scrambleKey = { String s ->
               s = (s ?: '').trim()
@@ -35,9 +107,11 @@ jobs:
               for (int i = 0; i < b.length; i++) sb.append(String.format('%02x', (b[i] ^ mask[i % mask.length]) & 0xff))
               return sb.toString()
           }
+
           android {
               namespace 'sg.mrttracker.app'
               compileSdk 34
+
               defaultConfig {
                   applicationId channel == 'dev' ? 'sg.mrttracker.app.dev' : 'sg.mrttracker.app'
                   resValue 'string', 'app_name', channel == 'dev' ? 'MRT Dev' : 'MRT Tracker'
@@ -58,13 +132,16 @@ jobs:
                   // Claude API key for the Ask tab, from the ANTHROPIC_API_KEY GitHub secret (none = built-in answers only).
                   buildConfigField 'String', 'AI_KEY_X', '"' + scrambleKey((project.findProperty('aiKey') ?: '').toString()) + '"'
               }
+
               buildFeatures {
                   buildConfig true
                   resValues true
               }
+
               dependencies {
                   implementation "androidx.webkit:webkit:1.18.0"
               }
+
               signingConfigs {
                   release {
                       // The keystore is created once by the GitHub build and kept in the repo,
@@ -75,6 +152,7 @@ jobs:
                       keyPassword 'mrttracker'
                   }
               }
+
               buildTypes {
                   release {
                       // Shrink and scramble the app's code so it's harder to pick apart.
@@ -83,6 +161,7 @@ jobs:
                       signingConfig signingConfigs.release
                   }
               }
+
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -91,6 +170,7 @@ jobs:
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app'
           cat > 'mrt-tracker-app/app/proguard-rules.pro' <<'MRTAPP_EOF'
+          # The tracker page calls these methods by name, so they must keep their names.
           -keepclassmembers class * {
               @android.webkit.JavascriptInterface <methods>;
           }
@@ -99,6 +179,7 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main'
           cat > 'mrt-tracker-app/app/src/main/AndroidManifest.xml' <<'MRTAPP_EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          
               <uses-permission android:name="android.permission.INTERNET" />
               <!-- In-app updates: install new versions, notify about them, and keep checking after a restart. -->
               <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -106,6 +187,7 @@ jobs:
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
               <!-- Offline mode: notices when the connection drops, to show saved data. -->
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+          
               <application
                   android:label="@string/app_name"
                   android:icon="@mipmap/ic_launcher"
@@ -116,6 +198,7 @@ jobs:
                   android:dataExtractionRules="@xml/data_extraction_rules"
                   android:usesCleartextTraffic="false"
                   android:networkSecurityConfig="@xml/network_security_config">
+          
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -126,13 +209,16 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
+          
                   <service
                       android:name=".UpdateJob"
                       android:permission="android.permission.BIND_JOB_SERVICE"
                       android:exported="false" />
+          
                   <receiver
                       android:name=".InstallReceiver"
                       android:exported="false" />
+          
                   <!-- Home screen widget: next trains at the first saved station. -->
                   <receiver
                       android:name=".TrainWidget"
@@ -145,10 +231,12 @@ jobs:
                           android:name="android.appwidget.provider"
                           android:resource="@xml/train_widget_info" />
                   </receiver>
+          
                   <!-- Trip reminders, set from the planned timetable. -->
                   <receiver
                       android:name=".TripAlarm"
                       android:exported="false" />
+          
                   <!-- Disruption check for the saved lines while the app is closed. -->
                   <service
                       android:name=".AlertJob"
@@ -158,7 +246,11 @@ jobs:
           </manifest>
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/assets'
+          # mrt-tracker-app/app/src/main/assets/index.html is stored compressed (gzip, then base64) to keep this file under GitHub's 500 KB limit
           base64 -d data/mrt-dev-page.b64 | gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'
+
+          # DEV spotting-log diagnostic: inspect the existing spotting layer before patching it.
+          # This does not alter the app; it only prints the relevant functions/keys into Actions logs.
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -176,6 +268,8 @@ jobs:
               if re.search(r'spot|log|sight|train', s, re.I):
                   print(s)
           PY
+
+          # DEV spotting-log diagnostics: identify the manual train log controls/state.
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -190,23 +284,10 @@ jobs:
           for m in re.finditer(r'.{0,180}(?:log spotting|spotting log|log a train|logged|sighting|seen at|at station|train id).{0,300}',h,re.I|re.S):
               print(m.group(0).replace('\\n',' ')[:700])
           PY
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          h=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
-          for name in ['repCandidates','repRender','repOpen','repClose','repSubmit','repShift','repRun','repToday']:
-              m=re.search(r'function\\s+'+name+r'\\s*\\([^)]*\\)\\s*\\{',h)
-              if m:
-                  n=re.search(r'\\nfunction\\s+',h[m.end():])
-                  end=m.end()+ (n.start() if n else 9000)
-                  print('--- FUNC '+name+' ---')
-                  print(h[m.start():min(end,m.start()+9000)])
-          print('--- REPORT EVENT/RENDER REFS ---')
-          for pat in ['repOpenBtn','repEntry','repCount','trainReports','REPS\\.push','repForm','repMsgText']:
-              print('PAT',pat)
-              for m in list(re.finditer(pat,h))[:12]:
-                  print(h[max(0,m.start()-500):min(len(h),m.end()+1200)].replace('\\n',' ')[:1800])
-          PY
+
+          # Mobile map paint guard: the restored page already has the real train-position
+          # renderer, but WebView resume/layout can leave the canvas dirty without a repaint.
+          # Repaint after layout/resume so train arrows, map count and map overlays stay visible.
           python3 - <<'PY'
           from pathlib import Path
           p = Path('mrt-tracker-app/app/src/main/assets/index.html')
@@ -243,6 +324,7 @@ jobs:
               h = h.replace('</body>', '<div data-mrt-map-paint-fix="1" hidden></div>' + patch + '</body>')
               p.write_text(h, encoding='utf-8')
           PY
+
           mkdir -p 'mrt-tracker-app/app/src/main/assets'
           cat > 'mrt-tracker-app/app/src/main/assets/livecam.html' <<'MRTAPP_EOF'
           <!doctype html>
@@ -302,13 +384,16 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/InstallReceiver.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+
           import android.content.BroadcastReceiver;
           import android.content.Context;
           import android.content.Intent;
           import android.content.pm.PackageInstaller;
           import android.os.Build;
+
           /** Hears back from Android's installer; shows Android's "Update this app?" screen when it asks. */
           public class InstallReceiver extends BroadcastReceiver {
+
               @Override
               public void onReceive(Context context, Intent intent) {
                   int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
@@ -331,7 +416,9 @@ jobs:
           MRTAPP_EOF
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/MainActivity.java' <<'MRTAPP_EOF'
+
           package sg.mrttracker.app;
+          
           import android.app.Activity;
           import android.content.Intent;
           import android.content.SharedPreferences;
@@ -349,7 +436,9 @@ jobs:
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.widget.FrameLayout;
+          
           import org.json.JSONObject;
+          
           import java.io.ByteArrayOutputStream;
           import java.io.InputStream;
           import java.net.HttpURLConnection;
@@ -358,17 +447,21 @@ jobs:
           import java.util.Arrays;
           import java.util.HashSet;
           import java.util.Set;
+          
           public class MainActivity extends Activity {
+          
               /** The only sites the tracker page may ask the app to fetch. */
               private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
                       "datamall2.mytransport.sg",
                       "news.google.com",
                       "api-open.data.gov.sg"));      // NEA live weather (data.gov.sg)
+          
               /** The app's own page, bundled inside the app. */
               private static final String PAGE_URL = "https://sg.mrttracker.app/assets/index.html";
               private WebViewAssetLoader assetLoader;
               /** Where LTA's temporary timetable download links point. */
               private static final String LTA_FILES_HOST = "dmprod-datasets.s3.ap-southeast-1.amazonaws.com";
+          
               /**
                * The Live cam tab's player page (assets/livecam.html) is served at this address, never fetched from
                * the internet. YouTube only plays embedded videos for an app that identifies itself with an https
@@ -378,9 +471,11 @@ jobs:
               private static final String CAM_CSP = "default-src 'none'; script-src 'unsafe-inline' https://www.youtube.com https://s.ytimg.com; "
                       + "frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'unsafe-inline'; img-src https: data:; "
                       + "base-uri 'none'; form-action 'none'";
+          
               /** The Claude API (Anthropic), used by the Ask tab, and the model it uses. */
               private static final String AI_URL = "https://api.anthropic.com/v1/messages";
               private static final String AI_MODEL = "claude-haiku-5-5";
+          
               private WebView web;
               private String cachedKey = null;
               private String cachedAiKey = null;
@@ -406,6 +501,7 @@ jobs:
               };
               // DEV:END
               private static java.lang.ref.WeakReference<MainActivity> current = new java.lang.ref.WeakReference<>(null);
+          
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
@@ -413,8 +509,10 @@ jobs:
                   prefs.edit().remove("spot_host").apply();   // spotter feed from older versions is no longer used
                   prefs.edit().remove("lta_key").apply();   // keys typed into older versions are no longer used
                   getSharedPreferences("game", MODE_PRIVATE).edit().clear().apply();   // the spotting game was removed
+          
                   // Nobody can attach a debugger to the page inside this app.
                   WebView.setWebContentsDebuggingEnabled(false);
+          
                   web = new WebView(this);
                   assetLoader = new WebViewAssetLoader.Builder()
                           .setDomain(CAM_HOST)
@@ -443,6 +541,7 @@ jobs:
                   web.addJavascriptInterface(new Bridge(), "MrtApp");
                   // Offline: with no connection, map tiles and fonts come from the WebView's own cache.
                   watchNetwork();
+          
                   // Full screen for the Live cam video (YouTube's full-screen button), sideways while it's shown.
                   web.setWebChromeClient(new WebChromeClient() {
                       @Override
@@ -458,16 +557,19 @@ jobs:
                           systemBars(false);
                           setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
                       }
+          
                       @Override
                       public void onHideCustomView() {
                           leaveFullScreen();
                       }
+          
                       /** No grey "play" placeholder before the video starts. */
                       @Override
                       public android.graphics.Bitmap getDefaultVideoPoster() {
                           return android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888);
                       }
                   });
+          
                   // Keep the tracker inside the app. Web links (https/http) open in the browser or the
                   // X/Facebook app; every other kind of link (app intents, scripts, other files) is blocked.
                   web.setWebViewClient(new WebViewClient() {
@@ -490,6 +592,7 @@ jobs:
                           }
                           return true;
                       }
+          
                       /** Serves the Live cam player page at https://sg.mrttracker.app/livecam.html (nothing else there). */
                       @Override
                       public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -510,19 +613,24 @@ jobs:
                           return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", h,
                                   new java.io.ByteArrayInputStream(new byte[0]));
                       }
+          
                       @Override
                       public void onPageFinished(WebView view, String url) {
                           pageLoaded = true;
                           checkForUpdate();
                       }
+
                       @Override
                       public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
                           pageLoaded = false;
                           return true;
                       }
+          
                   });
+          
                   setContentView(web);
                   web.loadUrl(PAGE_URL);
+          
                   // Updates: check in the background every few hours, and ask once to allow notifications.
                   Updater.schedule(this);
                   // Notification channels (disruptions, trip reminders) and the background disruption check
@@ -534,12 +642,14 @@ jobs:
                       requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
                   }
               }
+          
               @Override
               protected void onNewIntent(Intent intent) {
                   super.onNewIntent(intent);
                   setIntent(intent);
                   checkForUpdate();
               }
+          
               /** Asks GitHub whether a newer version exists; if so, the page shows the update banner. */
               private void checkForUpdate() {
                   if (!Updater.enabled() || updating) return;
@@ -550,6 +660,7 @@ jobs:
                       runOnUiThread(() -> { if (pageLoaded) web.evaluateJavascript(js, null); });
                   }).start();
               }
+          
               /** Called by the installer if an update couldn't be installed. */
               static void reportUpdateError(String message) {
                   MainActivity a = current.get();
@@ -558,6 +669,7 @@ jobs:
                   final String js = "window.updateError && window.updateError(" + JSONObject.quote(message == null ? "" : message) + ")";
                   a.runOnUiThread(() -> a.web.evaluateJavascript(js, null));
               }
+          
               @Override
               protected void onResume() {
                   super.onResume();
@@ -569,6 +681,7 @@ jobs:
                       web.evaluateJavascript("window.appResume && window.appResume()", null);
                   }
               }
+          
               /** Back from a full-screen video: put the page back as it was. */
               private void leaveFullScreen() {
                   if (fullView == null) return;
@@ -579,6 +692,7 @@ jobs:
                   if (fullDone != null) fullDone.onCustomViewHidden();
                   fullDone = null;
               }
+          
               // DEV:START
               /**
                * Train spotting: copies what's on screen inside the box (the Live cam's video, over the tracks) into a
@@ -619,20 +733,24 @@ jobs:
                   }
               }
               // DEV:END
+          
               /** Hides the status and navigation bars while a video is full screen (a swipe brings them back briefly). */
               @SuppressWarnings("deprecation")
               private void systemBars(boolean show) {
                   getWindow().getDecorView().setSystemUiVisibility(show ? View.SYSTEM_UI_FLAG_VISIBLE
                           : View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
               }
+          
               /** The answer to "Allow notifications?": tell the page so it can update its switches. */
               @Override
               public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
                   super.onRequestPermissionsResult(requestCode, permissions, grantResults);
                   if (pageLoaded) web.evaluateJavascript("window.notifyPermChanged && window.notifyPermChanged()", null);
               }
+          
               private android.net.ConnectivityManager.NetworkCallback netCallback = null;
               private volatile boolean online = true;
+          
               private boolean onlineNow() {
                   try {
                       android.net.ConnectivityManager cm = getSystemService(android.net.ConnectivityManager.class);
@@ -643,12 +761,14 @@ jobs:
                       return true;
                   }
               }
+          
               /** Online: normal caching. Offline: use whatever the WebView has saved (map tiles, fonts), however old. */
               private void netChanged(boolean on) {
                   online = on;
                   web.getSettings().setCacheMode(on ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
                   if (pageLoaded) web.evaluateJavascript("window.netState && window.netState(" + on + ")", null);
               }
+          
               private void watchNetwork() {
                   netChanged(onlineNow());
                   try {
@@ -659,6 +779,7 @@ jobs:
                           public void onAvailable(android.net.Network n) {
                               runOnUiThread(() -> netChanged(true));
                           }
+          
                           @Override
                           public void onLost(android.net.Network n) {
                               runOnUiThread(() -> netChanged(onlineNow()));
@@ -669,6 +790,7 @@ jobs:
                       netCallback = null;
                   }
               }
+          
               @Override
               protected void onDestroy() {
                   try {
@@ -678,6 +800,7 @@ jobs:
                   netCallback = null;
                   super.onDestroy();
               }
+          
               /** Android's back button closes an open history card (or other panel) before leaving the app. */
               @Override
               public void onBackPressed() {
@@ -693,6 +816,7 @@ jobs:
                       if (!"1".equals(v)) MainActivity.super.onBackPressed();
                   });
               }
+          
               @Override
               protected void onPause() {
                   // The Live cam stops streaming while the app is in the background (it saves mobile data).
@@ -705,12 +829,15 @@ jobs:
                   web.onPause();
                   super.onPause();
               }
+          
               /** Methods the tracker page can call as window.MrtApp.*. */
               private class Bridge {
+          
                   @JavascriptInterface
                   public boolean hasKey() {
                       return !ltaKey().isEmpty();
                   }
+          
                   /** LTA's official train timetable, packed into the app at build time ("" if this build has none). */
                   @JavascriptInterface
                   public String getTimetable() {
@@ -720,6 +847,7 @@ jobs:
                           return "";
                       }
                   }
+          
                   /** Building outlines and heights near stations (OpenStreetMap), packed at build time ("" if none). */
                   @JavascriptInterface
                   public String getBuildings() {
@@ -729,6 +857,7 @@ jobs:
                           return "";
                       }
                   }
+          
                   /** Real track shapes for the RTS Link and the Sentosa Express (OpenStreetMap), packed when GitHub builds the app. */
                   @JavascriptInterface
                   public String getTracks() {
@@ -738,6 +867,7 @@ jobs:
                           return "";
                       }
                   }
+          
                   /** Downloads and installs the new version. Progress and errors go back to the page. */
                   @JavascriptInterface
                   public void installUpdate() {
@@ -767,11 +897,13 @@ jobs:
                           }
                       }).start();
                   }
+          
                   /** True when a Claude API key was built into the app, so the Ask tab can use Claude. */
                   @JavascriptInterface
                   public boolean hasAi() {
                       return !aiKey().isEmpty();
                   }
+          
                   /**
                    * Sends one Ask-tab request to the Claude API and returns the reply to the page.
                    * The key is added here and never given to the page. Whatever the page sends, the app
@@ -817,6 +949,7 @@ jobs:
                           runOnUiThread(() -> web.evaluateJavascript(js, null));
                       }).start();
                   }
+          
                   /**
                    * Finds a YouTube channel's live stream for the Live cam tab (RailCam Singapore, @railcamsg):
                    * opens the channel's /live page, which is the live video's page while the channel is live.
@@ -863,6 +996,7 @@ jobs:
                           runOnUiThread(() -> web.evaluateJavascript(js, null));
                       }).start();
                   }
+          
                   // DEV:START
                   /**
                    * Train spotting on the Live cam (MRT Tracker): {"x","y","w","h"} is the box over the tracks in the page's
@@ -891,6 +1025,7 @@ jobs:
                       return true;
                   }
                   // DEV:END
+          
                   /** Checks for a new version now (the Settings button). Reply: {"available":bool,"version":"..."} */
                   @JavascriptInterface
                   public void checkUpdateNow(final String id) {
@@ -902,16 +1037,20 @@ jobs:
                           runOnUiThread(() -> web.evaluateJavascript(js, null));
                       }).start();
                   }
+          
                   /** True when the LTA key was built into the app, so nobody needs to enter one. */
                   @JavascriptInterface
                   public boolean builtInKey() {
                       return !ltaKey().isEmpty();
                   }
+          
+          
                   /** Which app this is: "beta" (MRT Tracker) or "dev" (MRT Tracker, for trying new features). */
                   @JavascriptInterface
                   public String getChannel() {
                       return BuildConfig.CHANNEL;
                   }
+          
                   /** The installed app's version, e.g. 2026.11.05-1310 (the build date and time). */
                   @JavascriptInterface
                   public String getVersion() {
@@ -921,12 +1060,14 @@ jobs:
                           return "";
                       }
                   }
+          
                   /** The home screen widget's data: the first saved station's next trains (small JSON from Home). */
                   @JavascriptInterface
                   public void widgetData(String json) {
                       if (json == null || json.length() > 16000) return;
                       TrainWidget.save(getApplicationContext(), json);
                   }
+          
                   /** "on", "ask" (Android may still ask the person) or "off" (blocked: only Settings can turn it on). */
                   @JavascriptInterface
                   public String notifyState() {
@@ -935,6 +1076,7 @@ jobs:
                       }
                       return Alerts.allowed(getApplicationContext()) ? "on" : "off";
                   }
+          
                   @JavascriptInterface
                   public void askNotify() {
                       runOnUiThread(() -> {
@@ -946,6 +1088,7 @@ jobs:
                           requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
                       });
                   }
+          
                   @JavascriptInterface
                   public void openNotifySettings() {
                       runOnUiThread(() -> {
@@ -958,27 +1101,32 @@ jobs:
                           }
                       });
                   }
+          
                   /** A disruption on a saved line (sig names it, so each one notifies once); "" means all clear. */
                   @JavascriptInterface
                   public void disruption(String sig, String title, String text) {
                       Alerts.disruption(getApplicationContext(), sig, title, text);
                   }
+          
                   /** Which LTA lines to watch in the background, and whether disruption alerts are on. */
                   @JavascriptInterface
                   public void setAlertLines(String json) {
                       if (json == null || json.length() > 2000) return;
                       Alerts.setLines(getApplicationContext(), json);
                   }
+          
                   /** Trip reminders: [{at: epoch ms, title, text}], from the planned timetable. */
                   @JavascriptInterface
                   public void tripRemind(String json) {
                       if (json == null || json.length() > 8000) return;
                       Alerts.tripSchedule(getApplicationContext(), json);
                   }
+          
                   @JavascriptInterface
                   public void tripCancel() {
                       Alerts.tripCancel(getApplicationContext());
                   }
+          
                   /** Android's share sheet for plain text (the Spotter's log export). */
                   @JavascriptInterface
                   public void share(final String text) {
@@ -992,10 +1140,12 @@ jobs:
                           }
                       });
                   }
+          
                   @JavascriptInterface
                   public boolean isOnline() {
                       return online;
                   }
+          
                   @JavascriptInterface
                   public void fetch(final String id, final String url, final boolean withKey) {
                       new Thread(() -> {
@@ -1030,6 +1180,7 @@ jobs:
                           runOnUiThread(() -> web.evaluateJavascript(js, null));
                       }).start();
                   }
+          
                   /**
                    * Asks LTA for a fresh timetable link, downloads gtfs_schedule.zip, saves a copy to
                    * Downloads, and returns a short summary of the files inside (as JSON) to the page.
@@ -1058,6 +1209,7 @@ jobs:
                               if (!"https".equals(lu.getProtocol()) || !LTA_FILES_HOST.equals(lu.getHost())) {
                                   throw new java.io.IOException("Unexpected download link");
                               }
+          
                               // 2. Download the zip to the app's cache.
                               java.io.File zip = new java.io.File(getCacheDir(), "gtfs_schedule.zip");
                               HttpURLConnection d = (HttpURLConnection) lu.openConnection();
@@ -1069,6 +1221,7 @@ jobs:
                               }
                               d.disconnect();
                               out.put("size", zip.length());
+          
                               // 3. Save a copy to Downloads (Android 10 and newer).
                               String name = "lta_gtfs_schedule_" + new java.text.SimpleDateFormat("yyyy-MM-dd_HHmm", java.util.Locale.US).format(new java.util.Date()) + ".zip";
                               if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -1085,6 +1238,7 @@ jobs:
                               } else {
                                   out.put("saved", "");
                               }
+          
                               // 4. Summarise: each file, its size, line count and first lines.
                               org.json.JSONArray files = new org.json.JSONArray();
                               try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(zip)) {
@@ -1123,16 +1277,19 @@ jobs:
                       }).start();
                   }
               }
+          
               /** The LTA DataMall key, unscrambled in memory from the build setting LTA_KEY_X. */
               private synchronized String ltaKey() {
                   if (cachedKey == null) cachedKey = unscramble(BuildConfig.LTA_KEY_X);
                   return cachedKey;
               }
+          
               /** The Claude API key for the Ask tab, from the build setting AI_KEY_X ("" if none was set). */
               private synchronized String aiKey() {
                   if (cachedAiKey == null) cachedAiKey = unscramble(BuildConfig.AI_KEY_X);
                   return cachedAiKey;
               }
+          
               /** Keys are stored scrambled with a mask made from the app's original package name (the same for MRT Tracker). */
               static String unscramble(String hx) {
                   try {
@@ -1147,6 +1304,9 @@ jobs:
                       return "";
                   }
               }
+          
+          
+          
               private HttpURLConnection open(String url, boolean withKey) throws java.io.IOException {
                   HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                   conn.setConnectTimeout(10000);
@@ -1156,6 +1316,7 @@ jobs:
                   if (withKey) conn.setRequestProperty("AccountKey", ltaKey());
                   return conn;
               }
+          
               /** Reads a YouTube page (www.youtube.com only), up to `max` bytes, as a browser would ask for it. */
               private static String youtubeText(String url, int max) throws java.io.IOException {
                   URL u = new URL(url);
@@ -1179,23 +1340,28 @@ jobs:
                       c.disconnect();
                   }
               }
+          
               private static String firstMatch(String text, String regex) {
                   java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(text);
                   return m.find() ? m.group(1) : null;
               }
+          
               private static String nz(String s) {
                   return s == null ? "" : s;
               }
+          
               /** "Trains &amp; more" → "Trains & more". */
               private static String unescape(String s) {
                   if (s == null) return "";
                   return android.text.Html.fromHtml(s, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim();
               }
+          
               private static void copy(InputStream in, java.io.OutputStream out) throws java.io.IOException {
                   byte[] buf = new byte[16384];
                   int n;
                   while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
               }
+          
               private static String readAll(InputStream in) throws java.io.IOException {
                   ByteArrayOutputStream out = new ByteArrayOutputStream();
                   byte[] buf = new byte[8192];
@@ -1209,10 +1375,13 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/UpdateJob.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+
           import android.app.job.JobParameters;
           import android.app.job.JobService;
+
           /** Runs every few hours in the background: checks GitHub and notifies if there's a new version. */
           public class UpdateJob extends JobService {
+
               @Override
               public boolean onStartJob(final JobParameters params) {
                   new Thread(() -> {
@@ -1221,6 +1390,7 @@ jobs:
                   }).start();
                   return true;
               }
+
               @Override
               public boolean onStopJob(JobParameters params) {
                   return true;   // try again later
@@ -1230,6 +1400,7 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/Updater.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+
           import android.app.Notification;
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
@@ -1243,7 +1414,9 @@ jobs:
           import android.content.pm.PackageInfo;
           import android.content.pm.PackageInstaller;
           import android.os.Build;
+
           import org.json.JSONObject;
+
           import java.io.ByteArrayOutputStream;
           import java.io.IOException;
           import java.io.InputStream;
@@ -1252,6 +1425,7 @@ jobs:
           import java.net.URL;
           import java.nio.charset.StandardCharsets;
           import java.util.Locale;
+
           /**
            * In-app updates.
            *
@@ -1264,21 +1438,27 @@ jobs:
            * update that isn't signed with this app's own signing key, so a tampered file can't be installed.
            */
           final class Updater {
+
               static final String CHANNEL = "updates";
               static final int NOTIFY_ID = 1001;
               static final int JOB_ID = 2001;
               private static final long MAX_APK = 60L * 1024 * 1024;
+
               private Updater() {}
+
               static boolean enabled() {
                   return !BuildConfig.UPDATE_REPO.isEmpty();
               }
+
               /** MRT Tracker (beta) takes the latest release; MRT Dev takes the "dev" pre-release. */
               private static boolean dev() {
                   return "dev".equals(BuildConfig.CHANNEL);
               }
+
               private static String base() {
                   return "https://github.com/" + BuildConfig.UPDATE_REPO + (dev() ? "/releases/download/dev/" : "/releases/latest/download/");
               }
+
               /** The version waiting on GitHub, or null if none can be read. */
               static JSONObject latest() {
                   if (!enabled()) return null;
@@ -1290,6 +1470,7 @@ jobs:
                       return null;
                   }
               }
+
               static long installedCode(Context c) {
                   try {
                       PackageInfo pi = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
@@ -1298,6 +1479,7 @@ jobs:
                       return Long.MAX_VALUE;
                   }
               }
+
               static String installedName(Context c) {
                   try {
                       return c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
@@ -1305,13 +1487,16 @@ jobs:
                       return "";
                   }
               }
+
               /** Newer version info if one is available, otherwise null. */
               static JSONObject newer(Context c) {
                   JSONObject j = latest();
                   if (j == null) return null;
                   return j.optLong("versionCode", 0) > installedCode(c) ? j : null;
               }
+
               /* ---------- background checks and notifications ---------- */
+
               static void schedule(Context c) {
                   if (!enabled()) return;
                   try {
@@ -1327,6 +1512,7 @@ jobs:
                   } catch (Exception ignored) {
                   }
               }
+
               /** Posts "New version available" once per new version. */
               static void notifyIfNew(Context c) {
                   JSONObject j = newer(c);
@@ -1336,6 +1522,7 @@ jobs:
                   if (p.getLong("notified_code", 0) == code) return;
                   if (showNotification(c, j.optString("versionName", ""))) p.edit().putLong("notified_code", code).apply();
               }
+
               static boolean showNotification(Context c, String versionName) {
                   try {
                       NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -1360,8 +1547,11 @@ jobs:
                       return false;
                   }
               }
+
               /* ---------- download and install ---------- */
+
               interface Progress { void on(int percent); }
+
               /**
                * Downloads the new app into Android's installer, then asks Android to install it.
                * Android shows its usual "Do you want to update this app?" screen to confirm.
@@ -1388,15 +1578,19 @@ jobs:
                       s.close();
                   }
               }
+
               /* ---------- HTTPS, GitHub only ---------- */
+
               private static final class Sink {
                   final OutputStream out; final Progress progress;
                   Sink(OutputStream out, Progress progress) { this.out = out; this.progress = progress; }
               }
+
               private static boolean allowedHost(String h) {
                   h = h.toLowerCase(Locale.ROOT);
                   return h.equals("github.com") || h.endsWith(".githubusercontent.com");
               }
+
               /** GET with redirects followed by hand, so every hop is checked against GitHub's hosts. */
               private static byte[] get(String url, long max, Sink sink) throws IOException {
                   for (int hop = 0; hop < 6; hop++) {
@@ -1602,18 +1796,22 @@ jobs:
           mkdir -p 'mrt-tracker-app/tools'
           cat > 'mrt-tracker-app/tools/build_buildings.py' <<'MRTAPP_EOF'
           """Pack building outlines and heights around every station for the 3D buildings on the simple map.
+
           Runs on GitHub during every build:  python3 tools/build_buildings.py <app project folder> [cache folder]
           After a fresh download it also writes "osm-fresh" next to the cache folder, so the workflow saves the new copy.
+
           Buildings come from OpenStreetMap (data (c) OpenStreetMap contributors, ODbL), through the Overpass
           API. A copy is kept in the cache folder between builds, so OpenStreetMap is only asked again once a
           month, or when stations change. If the download fails, the last saved copy is used; with neither,
           the app simply shows no buildings. This step never fails the build.
+
           buildings.json:
             v: 1, src: attribution, at: "YYYY-MM-DD", r: radius in metres, q: metres per unit, key: station set
             b: [[height m, x, y, dx, dy, dx, dy, ...], ...]  outline in units of q, first point then steps,
                in the map's own metres (x east, y south of central Singapore), sorted north to south
           """
           import hashlib, json, math, os, re, shutil, sys, time, urllib.error, urllib.parse, urllib.request
+
           ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
           CACHE = sys.argv[2] if len(sys.argv) > 2 else None
           ASSETS = os.path.join(ROOT, "app/src/main/assets")
@@ -1630,8 +1828,10 @@ jobs:
           MAX_AGE_DAYS = 30
           DEADLINE = time.time() + float(os.environ.get("BUILDINGS_MAX_SECONDS", 8 * 60))   # stop asking after 8 minutes, so a slow day can't hold up the build
           LEVEL_M = 3.2
+          # Same projection as the map (build_map.py): metres east and south of central Singapore.
           LAT0, LON0 = 1.3521, 103.8198
           KX, KY = 111320 * math.cos(math.radians(LAT0)), 110574
+          # Typical heights in levels, for buildings without a height or level count.
           LEVELS = {"apartments": 12, "residential": 10, "hdb": 12, "dormitory": 8, "hotel": 15, "office": 10, "commercial": 6,
                     "retail": 3, "mall": 5, "hospital": 8, "school": 4, "university": 5, "college": 4, "public": 4, "civic": 4,
                     "government": 5, "industrial": 3, "warehouse": 3, "factory": 3, "train_station": 2, "transportation": 2,
@@ -1640,14 +1840,17 @@ jobs:
                     "religious": 2, "shed": 1, "hut": 1, "kiosk": 1, "service": 1, "carport": 1, "roof": 1, "toilets": 1}
           SKIP = {"no", "construction", "proposed", "demolished", "abandoned", "ruins", "bridge"}
           report = []
+
           def say(line=""):
               print(line)
               report.append(line)
+
           def finish():
               if SUMMARY:
                   with open(SUMMARY, "a") as f:
                       f.write("## 3D buildings\n\n" + "\n".join(report) + "\n")
               sys.exit(0)
+
           def station_points():
               """Station positions from the map data in the app's page, joined where they're close together."""
               html = open(os.path.join(ASSETS, "index.html"), encoding="utf-8").read()
@@ -1658,10 +1861,13 @@ jobs:
                   if not any(math.hypot(x - a, y - b) < 150 for a, b in out):
                       out.append((x, y))
               return out
+
           def to_latlon(x, y):
               return LAT0 - y / KY, LON0 + x / KX
+
           def to_xy(lat, lon):
               return (lon - LON0) * KX, -(lat - LAT0) * KY
+
           def overpass(points):
               parts = []
               for x, y in points:
@@ -1687,12 +1893,14 @@ jobs:
                           last = f"{type(e).__name__}: {e}"
                       time.sleep(3 + attempt * 7)
               raise RuntimeError(last)
+
           def num(v):
               m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(m|metres?|meters?|ft|feet|')?\s*$", str(v or ""), re.I)
               if not m:
                   return None
               n = float(m.group(1))
               return n * 0.3048 if m.group(2) and m.group(2).lower() in ("ft", "feet", "'") else n
+
           def height(tags):
               h = num(tags.get("height"))
               if h and 1 <= h <= 600:
@@ -1701,6 +1909,7 @@ jobs:
               if lv and 0 < lv <= 150:
                   return max(3.0, lv * LEVEL_M + (num(tags.get("roof:levels")) or 0) * LEVEL_M * 0.5)
               return LEVELS.get(tags.get("building", "yes"), 3) * LEVEL_M
+
           def simplify(pts, tol):
               if len(pts) < 4:
                   return pts
@@ -1721,6 +1930,7 @@ jobs:
                       keep[bi] = True
                       stack += [(a, bi), (bi, b)]
               return [p for p, k in zip(pts, keep) if k]
+
           def simplify_ring(pts, tol):
               """Simplify a closed outline (first point not repeated): split it at the point farthest from
               the start and simplify each half, since both ends of a closed line are the same point."""
@@ -1730,8 +1940,10 @@ jobs:
               a = simplify(pts[:far + 1], tol)
               b = simplify(pts[far:] + [pts[0]], tol)
               return a[:-1] + b[:-1]
+
           def area(pts):
               return abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1] for i in range(len(pts)))) / 2
+
           def rings(el):
               """Outer rings of a building, as lists of (lat, lon)."""
               if el["type"] == "way":
@@ -1758,6 +1970,7 @@ jobs:
                           break
                   out.append(ring)
               return out
+
           def pack(elements):
               seen, out = set(), []
               for el in elements:
@@ -1785,11 +1998,13 @@ jobs:
                       out.append((sum(p[1] for p in pts) / len(pts), flat))
               out.sort(key=lambda t: t[0])
               return [f for _, f in out]
+
           def use(path, why):
               os.makedirs(ASSETS, exist_ok=True)
               shutil.copyfile(path, OUT)
               j = json.load(open(OUT))
               say(f"{why}: {len(j['b']):,} buildings from OpenStreetMap, downloaded {j['at']} ({os.path.getsize(OUT) / 1e6:.1f} MB).")
+
           def main():
               pts = station_points()
               key = hashlib.sha1(json.dumps([(round(x, -1), round(y, -1)) for x, y in pts]).encode()).hexdigest()[:12]
@@ -1837,8 +2052,10 @@ jobs:
               if CACHE and not failed:
                   os.makedirs(CACHE, exist_ok=True)
                   shutil.copyfile(OUT, cached)
+                  # tells the workflow there's a new copy worth saving for next time
                   open(os.path.join(os.path.dirname(os.path.abspath(CACHE)), "osm-fresh"), "w").write(j["at"])
               say(f"✅ {len(b):,} buildings packed ({os.path.getsize(OUT) / 1e6:.1f} MB)" + (f"; {failed} of {parts} parts missing, so some stations have no buildings." if failed else "."))
+
           if __name__ == "__main__":
               try:
                   main()
@@ -1849,14 +2066,18 @@ jobs:
           mkdir -p 'mrt-tracker-app/tools'
           cat > 'mrt-tracker-app/tools/build_timetable.py' <<'MRTAPP_EOF'
           """Download LTA's official train timetable (GTFS Schedule (Train), LTA DataMall) and pack it for the app.
+
           Runs on GitHub during every build:  python3 tools/build_timetable.py <app project folder> [saved copy]
+
           Writes app/src/main/assets/timetable.json, which the app uses for exact train times. If anything
           goes wrong (no connection, unexpected format) it writes no timetable and the app falls back to
           estimates, so the build never fails because of this step. A report of what matched is written to
           the GitHub job summary.
+
           With a saved copy (the workflow keeps one in the repository, data/lta-timetable.json), every good
           download is also saved there, and when LTA's download fails the last good timetable is packed instead,
           so every version of the app has LTA's timetable.
+
           timetable.json:
             feed:     {source, built, files}
             services: [[service_id, "1111100" (Mon..Sun), start "YYYYMMDD", end "YYYYMMDD"], ...]
@@ -1868,6 +2089,7 @@ jobs:
                       -2 for a full loop back to where it started.
           """
           import csv, hashlib, io, json, os, re, shutil, sys, time, urllib.request, zipfile
+
           ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
           OUT = os.path.join(ROOT, "app/src/main/assets/timetable.json")
           SAVED = sys.argv[2] if len(sys.argv) > 2 else None
@@ -1875,9 +2097,11 @@ jobs:
           SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY")
           API = "https://datamall2.mytransport.sg/ltaodataservice/GTFSScheduleTrain"
           report = []
+
           def say(line=""):
               print(line)
               report.append(line)
+
           def use_saved():
               """LTA's download didn't work: pack the last good timetable instead, if there is one."""
               if not SAVED or not os.path.exists(SAVED):
@@ -1896,6 +2120,7 @@ jobs:
               except Exception as e:
                   say(f"\n⚠️ The saved timetable couldn't be read ({e}), so this version of the app uses estimates.")
                   return False
+
           def keep_copy(res):
               """Save a good download to the repository copy, unless it's the same timetable as last time."""
               if not SAVED:
@@ -1911,6 +2136,7 @@ jobs:
                   say("Saved a copy to the repository (data/lta-timetable.json), for any build where LTA's download fails.")
               except Exception as e:
                   say(f"⚠️ Couldn't keep a copy of the timetable ({e}).")
+
           def finish(ok):
               if not ok:
                   if os.path.exists(OUT):
@@ -1920,6 +2146,8 @@ jobs:
                   with open(SUMMARY, "a") as f:
                       f.write("## LTA train timetable\n\n" + "\n".join(report) + "\n")
               sys.exit(0)
+
+          # ---------- the LTA key (stored scrambled in app/build.gradle) ----------
           def lta_key():
               g = open(os.path.join(ROOT, "app/build.gradle")).read()
               m = re.search(r"LTA_KEY_X',\s*'\"([0-9a-f]+)\"'", g)
@@ -1930,6 +2158,7 @@ jobs:
               key = bytes(int(hx[i:i + 2], 16) ^ mask[(i // 2) % 32] for i in range(0, len(hx), 2)).decode()
               print("::add-mask::" + key)
               return key
+
           def http(url, headers=None, tries=3):
               for t in range(tries):
                   try:
@@ -1940,6 +2169,7 @@ jobs:
                       if t == tries - 1:
                           raise
                       time.sleep(3 * (t + 1))
+
           def find_link(o):
               if isinstance(o, str):
                   return o if o.startswith("https://") and "gtfs" in o.lower() else None
@@ -1954,11 +2184,14 @@ jobs:
                       if r:
                           return r
               return None
+
+          # ---------- station matching ----------
           def norm(s):
               s = s.lower().replace("&", "and")
               s = re.sub(r"\([^)]*\)", " ", s)
               s = re.sub(r"\b(mrt|lrt)\b|\bstation\b|\binterchange\b|\bplatform\b.*$", " ", s)
               return re.sub(r"[^a-z0-9]", "", s)
+
           NAME_IDX, CODE_IDX = {}, {}         # normalised name / code -> [(line, index)]
           for line, L in LINES.items():
               for i, (code, name) in enumerate(L["stations"]):
@@ -1966,6 +2199,7 @@ jobs:
                   CODE_IDX.setdefault(code.upper(), []).append((line, i))
           CODE_ALIASES = {"CE1": "CC34", "CE2": "CC33"}
           CODE_RE = re.compile(r"\b(NS|EW|CG|NE|CC|CE|DT|TE|BP|SE|SW|PE|PW)\s?(\d{1,2})\b|\b(STC|PTC)\b", re.I)
+
           def stop_candidates(stop, stops):
               """All (line, index) this GTFS stop could be, from station codes first, then names."""
               texts = [stop.get("stop_code", ""), stop.get("stop_id", ""), stop.get("stop_name", "")]
@@ -1983,7 +2217,9 @@ jobs:
               for n in names:
                   found += NAME_IDX.get(norm(n or ""), [])
               return sorted(set(found))
+
           MAX_STEP = 2      # stops next to each other on a trip are at most this far apart in the app's station list
+
           def legs_for(seq, line):
               """Split one trip's stops into runs that move one way along `line`. seq: [(cands_on_line, arr, dep)].
               A run also breaks where two stops in a row aren't neighbours in the app's list, such as where the
@@ -2014,6 +2250,7 @@ jobs:
                       legs.append(cur)
                       prow = cur["rows"][-1]
                       cur = {"rows": [prow], "idx": [], "dir": 0}
+                      # a station can appear twice on a line (Bukit Panjang on the BP loop): pick the closest pair
                       pairs = [(abs(a - b), a, b) for a in prow[0] for b in cands if b != a]
                       if pairs and min(pairs)[0] <= MAX_STEP:
                           _, a, b = min(pairs)
@@ -2025,6 +2262,7 @@ jobs:
               if cur and cur["idx"]:
                   legs.append(cur)
               return legs
+
           def headsign_idx(trip, line, legs):
               """Where a trip is headed, as a station index on its line: the trip's headsign if it names a station
               on the line, else (for a trip that turns or wraps, so its runs end before it does) its last stop.
@@ -2034,6 +2272,7 @@ jobs:
               if len(legs) > 1 and h >= 0 and (h == first or LINES[line]["stations"][h][0] == LINES[line]["stations"][first][0]):
                   return -2
               return h
+
           def headsign_station(trip, line, legs):
               hs = (trip.get("trip_headsign") or "").strip()
               if hs:
@@ -2048,9 +2287,11 @@ jobs:
                       last = legs[-1]["idx"][-1]
                       return min(found, key=lambda i: abs(i - last))       # a hub listed twice: the one nearest the trip's end
               return legs[-1]["idx"][-1] if len(legs) > 1 else -1
+
           def secs(t):
               h, m, s = (t or "").strip().split(":")
               return int(h) * 3600 + int(m) * 60 + int(s)
+
           def main():
               local = os.environ.get("MRT_GTFS_ZIP")      # for testing with a file instead of downloading
               if local:
@@ -2071,7 +2312,9 @@ jobs:
               except Exception as e:
                   say(f"⚠️ Couldn't download the timetable from LTA ({e}).")
                   finish(False)
+
               return process(z, data)
+
           def process(z, data):
               def table(name):
                   n = next((x for x in z.namelist() if x.split("/")[-1].lower() == name), None)
@@ -2079,6 +2322,7 @@ jobs:
                       return []
                   txt = z.read(n).decode("utf-8-sig", "replace")
                   return list(csv.DictReader(io.StringIO(txt)))
+
               say(f"Downloaded **{len(data) // 1024} KB** from LTA DataMall.")
               files = sorted(x.split("/")[-1] for x in z.namelist())
               say("Files: " + ", ".join(f"`{f}`" for f in files))
@@ -2089,6 +2333,7 @@ jobs:
                       head = z.read(n).decode("utf-8-sig", "replace").splitlines()[:3]
                       say(f"**{n}**\n```\n" + "\n".join(h[:300] for h in head) + "\n```")
               say("</details>\n")
+
               stops = {s["stop_id"]: s for s in table("stops.txt")}
               trips = {t["trip_id"]: t for t in table("trips.txt")}
               freqs = {}
@@ -2099,6 +2344,7 @@ jobs:
                   st_by_trip.setdefault(r["trip_id"], []).append(r)
               cal = table("calendar.txt")
               cdates = table("calendar_dates.txt")
+
               services, svc_index = [], {}
               def svc(sid):
                   if sid not in svc_index:
@@ -2113,18 +2359,22 @@ jobs:
               exc = {}
               for c in cdates:
                   exc.setdefault(c["date"].strip(), []).append([svc(c["service_id"]), int(c.get("exception_type", "1") or 1)])
+
               stop_cands = {sid: stop_candidates(s, stops) for sid, s in stops.items()}
               unmatched_stops = sorted({stops[sid].get("stop_name", sid) for sid, c in stop_cands.items()
                                         if not c and stops[sid].get("location_type", "0") in ("", "0")})
+
               out = {ln: {"pats": [], "trips": []} for ln in LINES}
               pat_idx = {ln: {} for ln in LINES}
               per_line = {ln: 0 for ln in LINES}
               skipped = []
+
               for tid, rows in st_by_trip.items():
                   if tid not in trips:
                       continue
                   rows.sort(key=lambda r: int(r["stop_sequence"]))
                   cands = [stop_cands.get(r["stop_id"], []) for r in rows]
+                  # which line covers most of this trip's stops?
                   score = {}
                   for cs in cands:
                       for ln in {c[0] for c in cs}:
@@ -2186,9 +2436,11 @@ jobs:
                       else:
                           out[line]["trips"].append([t0, p, sid])
                       per_line[line] += 1
+
               for ln in out:
                   out[ln]["trips"].sort()
               lines_ok = [ln for ln in out if out[ln]["trips"]]
+
               def special(ln):
                   """Runs headed somewhere other than the end of the line (special-bound trains). Not counted on
                   loops, where most runs are headed back round to where they started."""
@@ -2212,6 +2464,7 @@ jobs:
               if not lines_ok:
                   say("\n⚠️ No lines could be matched to the app's stations.")
                   finish(False)
+
               feed = {"source": "LTA DataMall, GTFS Schedule (Train)", "built": time.strftime("%Y-%m-%d", time.gmtime()),
                       "lines": lines_ok}
               res = {"feed": feed, "services": services, "except": exc,
@@ -2223,6 +2476,7 @@ jobs:
                   f"Lines without data use estimates: {', '.join(l for l in LINES if l not in lines_ok) or 'none'}.")
               keep_copy(res)
               finish(True)
+
           if __name__ == "__main__":
               try:
                   main()
@@ -2236,9 +2490,11 @@ jobs:
           cat > 'mrt-tracker-app/tools/lines.json' <<'MRTAPP_EOF'
           {"NSL":{"stations":[["NS1","Jurong East"],["NS2","Bukit Batok"],["NS3","Bukit Gombak"],["NS4","Choa Chu Kang"],["NS5","Yew Tee"],["NS7","Kranji"],["NS8","Marsiling"],["NS9","Woodlands"],["NS10","Admiralty"],["NS11","Sembawang"],["NS12","Canberra"],["NS13","Yishun"],["NS14","Khatib"],["NS15","Yio Chu Kang"],["NS16","Ang Mo Kio"],["NS17","Bishan"],["NS18","Braddell"],["NS19","Toa Payoh"],["NS20","Novena"],["NS21","Newton"],["NS22","Orchard"],["NS23","Somerset"],["NS24","Dhoby Ghaut"],["NS25","City Hall"],["NS26","Raffles Place"],["NS27","Marina Bay"],["NS28","Marina South Pier"]],"loop":false,"lrt":false},"EWL":{"stations":[["EW1","Pasir Ris"],["EW2","Tampines"],["EW3","Simei"],["EW4","Tanah Merah"],["EW5","Bedok"],["EW6","Kembangan"],["EW7","Eunos"],["EW8","Paya Lebar"],["EW9","Aljunied"],["EW10","Kallang"],["EW11","Lavender"],["EW12","Bugis"],["EW13","City Hall"],["EW14","Raffles Place"],["EW15","Tanjong Pagar"],["EW16","Outram Park"],["EW17","Tiong Bahru"],["EW18","Redhill"],["EW19","Queenstown"],["EW20","Commonwealth"],["EW21","Buona Vista"],["EW22","Dover"],["EW23","Clementi"],["EW24","Jurong East"],["EW25","Chinese Garden"],["EW26","Lakeside"],["EW27","Boon Lay"],["EW28","Pioneer"],["EW29","Joo Koon"],["EW30","Gul Circle"],["EW31","Tuas Crescent"],["EW32","Tuas West Road"],["EW33","Tuas Link"]],"loop":false,"lrt":false},"NEL":{"stations":[["NE1","HarbourFront"],["NE3","Outram Park"],["NE4","Chinatown"],["NE5","Clarke Quay"],["NE6","Dhoby Ghaut"],["NE7","Little India"],["NE8","Farrer Park"],["NE9","Boon Keng"],["NE10","Potong Pasir"],["NE11","Woodleigh"],["NE12","Serangoon"],["NE13","Kovan"],["NE14","Hougang"],["NE15","Buangkok"],["NE16","Sengkang"],["NE17","Punggol"],["NE18","Punggol Coast"]],"loop":false,"lrt":false},"CCL":{"stations":[["CC1","Dhoby Ghaut"],["CC2","Bras Basah"],["CC3","Esplanade"],["CC4","Promenade"],["CC5","Nicoll Highway"],["CC6","Stadium"],["CC7","Mountbatten"],["CC8","Dakota"],["CC9","Paya Lebar"],["CC10","MacPherson"],["CC11","Tai Seng"],["CC12","Bartley"],["CC13","Serangoon"],["CC14","Lorong Chuan"],["CC15","Bishan"],["CC16","Marymount"],["CC17","Caldecott"],["CC19","Botanic Gardens"],["CC20","Farrer Road"],["CC21","Holland Village"],["CC22","Buona Vista"],["CC23","one-north"],["CC24","Kent Ridge"],["CC25","Haw Par Villa"],["CC26","Pasir Panjang"],["CC27","Labrador Park"],["CC28","Telok Blangah"],["CC29","HarbourFront"],["CC30","Keppel"],["CC31","Cantonment"],["CC32","Prince Edward Road"],["CC33","Marina Bay"],["CC34","Bayfront"]],"loop":false,"lrt":false},"DTL":{"stations":[["DT1","Bukit Panjang"],["DT2","Cashew"],["DT3","Hillview"],["DT4","Hume"],["DT5","Beauty World"],["DT6","King Albert Park"],["DT7","Sixth Avenue"],["DT8","Tan Kah Kee"],["DT9","Botanic Gardens"],["DT10","Stevens"],["DT11","Newton"],["DT12","Little India"],["DT13","Rochor"],["DT14","Bugis"],["DT15","Promenade"],["DT16","Bayfront"],["DT17","Downtown"],["DT18","Telok Ayer"],["DT19","Chinatown"],["DT20","Fort Canning"],["DT21","Bencoolen"],["DT22","Jalan Besar"],["DT23","Bendemeer"],["DT24","Geylang Bahru"],["DT25","Mattar"],["DT26","MacPherson"],["DT27","Ubi"],["DT28","Kaki Bukit"],["DT29","Bedok North"],["DT30","Bedok Reservoir"],["DT31","Tampines West"],["DT32","Tampines"],["DT33","Tampines East"],["DT34","Upper Changi"],["DT35","Expo"],["DT36","Xilin"],["DT37","Sungei Bedok"]],"loop":false,"lrt":false},"TEL":{"stations":[["TE1","Woodlands North"],["TE2","Woodlands"],["TE3","Woodlands South"],["TE4","Springleaf"],["TE5","Lentor"],["TE6","Mayflower"],["TE7","Bright Hill"],["TE8","Upper Thomson"],["TE9","Caldecott"],["TE11","Stevens"],["TE12","Napier"],["TE13","Orchard Boulevard"],["TE14","Orchard"],["TE15","Great World"],["TE16","Havelock"],["TE17","Outram Park"],["TE18","Maxwell"],["TE19","Shenton Way"],["TE20","Marina Bay"],["TE22","Gardens by the Bay"],["TE23","Tanjong Rhu"],["TE24","Katong Park"],["TE25","Tanjong Katong"],["TE26","Marine Parade"],["TE27","Marine Terrace"],["TE28","Siglap"],["TE29","Bayshore"],["TE30","Bedok South"],["TE31","Sungei Bedok"]],"loop":false,"lrt":false},"CG":{"stations":[["CG","Tanah Merah"],["CG1","Expo"],["CG2","Changi Airport"]],"loop":false,"lrt":false},"BP":{"stations":[["BP1","Choa Chu Kang"],["BP2","South View"],["BP3","Keat Hong"],["BP4","Teck Whye"],["BP5","Phoenix"],["BP6","Bukit Panjang"],["BP7","Petir"],["BP8","Pending"],["BP9","Bangkit"],["BP10","Fajar"],["BP11","Segar"],["BP12","Jelapang"],["BP13","Senja"],["BP6","Bukit Panjang"]],"loop":false,"lrt":true},"SE":{"stations":[["STC","Sengkang"],["SE1","Compassvale"],["SE2","Rumbia"],["SE3","Bakau"],["SE4","Kangkar"],["SE5","Ranggung"],["STC","Sengkang"]],"loop":true,"lrt":true},"SW":{"stations":[["STC","Sengkang"],["SW1","Cheng Lim"],["SW2","Farmway"],["SW3","Kupang"],["SW4","Thanggam"],["SW5","Fernvale"],["SW6","Layar"],["SW7","Tongkang"],["SW8","Renjong"],["STC","Sengkang"]],"loop":true,"lrt":true},"PE":{"stations":[["PTC","Punggol"],["PE1","Cove"],["PE2","Meridian"],["PE3","Coral Edge"],["PE4","Riviera"],["PE5","Kadaloor"],["PE6","Oasis"],["PE7","Damai"],["PTC","Punggol"]],"loop":true,"lrt":true},"PW":{"stations":[["PTC","Punggol"],["PW1","Sam Kee"],["PW2","Teck Lee"],["PW3","Punggol Point"],["PW4","Samudera"],["PW5","Nibong"],["PW6","Sumang"],["PW7","Soo Teck"],["PTC","Punggol"]],"loop":true,"lrt":true}}
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/Alerts.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+          
           import android.app.AlarmManager;
           import android.app.Notification;
           import android.app.NotificationChannel;
@@ -2251,8 +2507,10 @@ jobs:
           import android.content.Intent;
           import android.content.SharedPreferences;
           import android.os.Build;
+          
           import org.json.JSONArray;
           import org.json.JSONObject;
+          
           import java.io.ByteArrayOutputStream;
           import java.io.InputStream;
           import java.net.HttpURLConnection;
@@ -2261,6 +2519,7 @@ jobs:
           import java.util.ArrayList;
           import java.util.Collections;
           import java.util.List;
+          
           /**
            * MRT Dev notifications: disruptions on the lines at your saved stations, and trip reminders
            * from the planned timetable. Nothing here uses your location.
@@ -2274,10 +2533,13 @@ jobs:
               private static final int JOB_ID = 7301;
               private static final String PREFS = "alerts";
               private static final String DATAMALL = "https://datamall2.mytransport.sg/ltaodataservice/TrainServiceAlerts";
+          
               private Alerts() {}
+          
               static SharedPreferences prefs(Context c) {
                   return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
               }
+          
               static void channels(Context c) {
                   if (Build.VERSION.SDK_INT < 26) return;
                   NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -2289,6 +2551,7 @@ jobs:
                   t.setDescription("When to board and when to get off, from the planned timetable");
                   nm.createNotificationChannel(t);
               }
+          
               /** True when this app may show notifications (Android 13+ asks the person first). */
               static boolean allowed(Context c) {
                   if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS")
@@ -2296,6 +2559,7 @@ jobs:
                   NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
                   return nm != null && nm.areNotificationsEnabled();
               }
+          
               static void post(Context c, String channel, int id, String title, String text) {
                   try {
                       channels(c);
@@ -2316,11 +2580,14 @@ jobs:
                   } catch (Exception ignored) {
                   }
               }
+          
               private static String clip(String s, int n) {
                   s = s == null ? "" : s.trim();
                   return s.length() > n ? s.substring(0, n - 1) + "…" : s;
               }
+          
               /* ---------- disruptions ---------- */
+          
               /** Posts once per new disruption (sig names the affected stretches); an empty sig means all clear. */
               static synchronized void disruption(Context c, String sig, String title, String text) {
                   SharedPreferences p = prefs(c);
@@ -2333,6 +2600,7 @@ jobs:
                   if (!p.getBoolean("on", true)) return;
                   post(c, CH_DISRUPT, DISRUPT_ID, title, text);
               }
+          
               /** The page says which LTA lines to watch ({"on":true,"lines":["NSL","CCL"]}); background checks follow. */
               static void setLines(Context c, String json) {
                   try {
@@ -2348,6 +2616,7 @@ jobs:
                   }
                   schedule(c);
               }
+          
               static void schedule(Context c) {
                   try {
                       JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
@@ -2367,6 +2636,7 @@ jobs:
                   } catch (Exception ignored) {
                   }
               }
+          
               /** Background check (the app closed): LTA's train service alerts for the saved lines. */
               static void check(Context c) {
                   SharedPreferences p = prefs(c);
@@ -2430,6 +2700,7 @@ jobs:
                       if (conn != null) conn.disconnect();
                   }
               }
+          
               private static String lineName(String l) {
                   switch (l) {
                       case "NSL": return "North-South Line";
@@ -2446,7 +2717,9 @@ jobs:
                       default: return l;
                   }
               }
+          
               /* ---------- trip reminders (AlarmManager, inexact, no special permission) ---------- */
+          
               static void tripSchedule(Context c, String json) {
                   tripCancel(c);
                   try {
@@ -2470,6 +2743,7 @@ jobs:
                   } catch (Exception ignored) {
                   }
               }
+          
               static void tripCancel(Context c) {
                   AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
                   for (int k = 0; k < TRIP_MAX; k++) {
@@ -2483,13 +2757,17 @@ jobs:
               }
           }
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/AlertJob.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+          
           import android.app.job.JobParameters;
           import android.app.job.JobService;
+          
           /** About every half hour while the app is closed: checks LTA for disruptions on the saved lines. */
           public class AlertJob extends JobService {
+          
               @Override
               public boolean onStartJob(final JobParameters params) {
                   new Thread(() -> {
@@ -2498,15 +2776,18 @@ jobs:
                   }).start();
                   return true;
               }
+          
               @Override
               public boolean onStopJob(JobParameters params) {
                   return true;   // try again later
               }
           }
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/TrainWidget.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+          
           import android.app.AlarmManager;
           import android.app.PendingIntent;
           import android.appwidget.AppWidgetManager;
@@ -2518,8 +2799,10 @@ jobs:
           import android.os.SystemClock;
           import android.view.View;
           import android.widget.RemoteViews;
+          
           import org.json.JSONArray;
           import org.json.JSONObject;
+          
           /**
            * Home screen widget: the first station saved on Home, its next trains each way, any disruption,
            * and when the app last updated it. The app pushes the times; the widget counts them down.
@@ -2531,10 +2814,12 @@ jobs:
               private static final int[] BAR = {R.id.w_b0, R.id.w_b1, R.id.w_b2, R.id.w_b3};
               private static final int[] DST = {R.id.w_d0, R.id.w_d1, R.id.w_d2, R.id.w_d3};
               private static final int[] TIM = {R.id.w_t0, R.id.w_t1, R.id.w_t2, R.id.w_t3};
+          
               static void save(Context c, String json) {
                   c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("data", json).apply();
                   updateAll(c);
               }
+          
               static void updateAll(Context c) {
                   try {
                       AppWidgetManager m = AppWidgetManager.getInstance(c);
@@ -2546,25 +2831,30 @@ jobs:
                   } catch (Exception ignored) {
                   }
               }
+          
               @Override
               public void onUpdate(Context c, AppWidgetManager m, int[] ids) {
                   RemoteViews v = build(c);
                   for (int id : ids) m.updateAppWidget(id, v);
                   tick(c, true);
               }
+          
               @Override
               public void onEnabled(Context c) {
                   tick(c, true);
               }
+          
               @Override
               public void onDisabled(Context c) {
                   tick(c, false);
               }
+          
               @Override
               public void onReceive(Context c, Intent intent) {
                   if (TICK.equals(intent.getAction())) updateAll(c);
                   else super.onReceive(c, intent);
               }
+          
               /** Counts the minutes down every few minutes while the screen is on (inexact and not waking the phone). */
               private static void tick(Context c, boolean on) {
                   AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
@@ -2574,6 +2864,7 @@ jobs:
                   if (on) am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 60_000, 5 * 60_000, pi);
                   else am.cancel(pi);
               }
+          
               static RemoteViews build(Context c) {
                   RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_trains);
                   Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -2633,14 +2924,18 @@ jobs:
               }
           }
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app'
           cat > 'mrt-tracker-app/app/src/main/java/sg/mrttracker/app/TripAlarm.java' <<'MRTAPP_EOF'
           package sg.mrttracker.app;
+          
           import android.content.BroadcastReceiver;
           import android.content.Context;
           import android.content.Intent;
+          
           /** A planned trip reminder is due: show it. */
           public class TripAlarm extends BroadcastReceiver {
+          
               @Override
               public void onReceive(Context context, Intent intent) {
                   String title = intent.getStringExtra("title");
@@ -2649,6 +2944,7 @@ jobs:
               }
           }
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/res/drawable'
           cat > 'mrt-tracker-app/app/src/main/res/drawable/widget_bg.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -2658,6 +2954,7 @@ jobs:
               <corners android:radius="22dp" />
           </shape>
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/res/layout'
           cat > 'mrt-tracker-app/app/src/main/res/layout/widget_trains.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -2668,11 +2965,13 @@ jobs:
               android:background="@drawable/widget_bg"
               android:orientation="vertical"
               android:padding="14dp">
+          
               <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
                   android:gravity="center_vertical"
                   android:orientation="horizontal">
+          
                   <TextView
                       android:id="@+id/w_title"
                       android:layout_width="0dp"
@@ -2684,6 +2983,7 @@ jobs:
                       android:textColor="#FFFFFF"
                       android:textSize="17sp"
                       android:textStyle="bold" />
+          
                   <TextView
                       android:id="@+id/w_upd"
                       android:layout_width="wrap_content"
@@ -2692,6 +2992,7 @@ jobs:
                       android:textColor="#AEB8C3"
                       android:textSize="11sp" />
               </LinearLayout>
+          
               <TextView
                   android:id="@+id/w_msg"
                   android:layout_width="match_parent"
@@ -2700,6 +3001,7 @@ jobs:
                   android:text="@string/widget_empty"
                   android:textColor="#C9D2DC"
                   android:textSize="13sp" />
+          
               <LinearLayout
                   android:id="@+id/w_r0"
                   android:layout_width="match_parent"
@@ -2707,11 +3009,13 @@ jobs:
                   android:layout_marginTop="6dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal">
+          
                   <TextView
                       android:id="@+id/w_b0"
                       android:layout_width="4dp"
                       android:layout_height="18dp"
                       android:background="#888888" />
+          
                   <TextView
                       android:id="@+id/w_d0"
                       android:layout_width="0dp"
@@ -2722,6 +3026,7 @@ jobs:
                       android:maxLines="1"
                       android:textColor="#E8EDF2"
                       android:textSize="13sp" />
+          
                   <TextView
                       android:id="@+id/w_t0"
                       android:layout_width="wrap_content"
@@ -2733,6 +3038,7 @@ jobs:
                       android:textSize="13sp"
                       android:textStyle="bold" />
               </LinearLayout>
+          
               <LinearLayout
                   android:id="@+id/w_r1"
                   android:layout_width="match_parent"
@@ -2740,11 +3046,13 @@ jobs:
                   android:layout_marginTop="6dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal">
+          
                   <TextView
                       android:id="@+id/w_b1"
                       android:layout_width="4dp"
                       android:layout_height="18dp"
                       android:background="#888888" />
+          
                   <TextView
                       android:id="@+id/w_d1"
                       android:layout_width="0dp"
@@ -2755,6 +3063,7 @@ jobs:
                       android:maxLines="1"
                       android:textColor="#E8EDF2"
                       android:textSize="13sp" />
+          
                   <TextView
                       android:id="@+id/w_t1"
                       android:layout_width="wrap_content"
@@ -2766,6 +3075,7 @@ jobs:
                       android:textSize="13sp"
                       android:textStyle="bold" />
               </LinearLayout>
+          
               <LinearLayout
                   android:id="@+id/w_r2"
                   android:layout_width="match_parent"
@@ -2773,11 +3083,13 @@ jobs:
                   android:layout_marginTop="6dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal">
+          
                   <TextView
                       android:id="@+id/w_b2"
                       android:layout_width="4dp"
                       android:layout_height="18dp"
                       android:background="#888888" />
+          
                   <TextView
                       android:id="@+id/w_d2"
                       android:layout_width="0dp"
@@ -2788,6 +3100,7 @@ jobs:
                       android:maxLines="1"
                       android:textColor="#E8EDF2"
                       android:textSize="13sp" />
+          
                   <TextView
                       android:id="@+id/w_t2"
                       android:layout_width="wrap_content"
@@ -2799,6 +3112,7 @@ jobs:
                       android:textSize="13sp"
                       android:textStyle="bold" />
               </LinearLayout>
+          
               <LinearLayout
                   android:id="@+id/w_r3"
                   android:layout_width="match_parent"
@@ -2806,11 +3120,13 @@ jobs:
                   android:layout_marginTop="6dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal">
+          
                   <TextView
                       android:id="@+id/w_b3"
                       android:layout_width="4dp"
                       android:layout_height="18dp"
                       android:background="#888888" />
+          
                   <TextView
                       android:id="@+id/w_d3"
                       android:layout_width="0dp"
@@ -2821,6 +3137,7 @@ jobs:
                       android:maxLines="1"
                       android:textColor="#E8EDF2"
                       android:textSize="13sp" />
+          
                   <TextView
                       android:id="@+id/w_t3"
                       android:layout_width="wrap_content"
@@ -2832,6 +3149,7 @@ jobs:
                       android:textSize="13sp"
                       android:textStyle="bold" />
               </LinearLayout>
+          
               <TextView
                   android:id="@+id/w_dis"
                   android:layout_width="match_parent"
@@ -2844,6 +3162,7 @@ jobs:
                   android:visibility="gone" />
           </LinearLayout>
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/app/src/main/res/xml'
           cat > 'mrt-tracker-app/app/src/main/res/xml/train_widget_info.xml' <<'MRTAPP_EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -2861,10 +3180,12 @@ jobs:
               android:updatePeriodMillis="1800000"
               android:widgetCategory="home_screen" />
           MRTAPP_EOF
+
           mkdir -p 'mrt-tracker-app/tools'
           cat > 'mrt-tracker-app/tools/build_tracks.py' <<'MRTAPP_EOF'
           """RTS/Sentosa OSM track builder."""
           import json, math, os, re, sys, time, urllib.parse, urllib.request
+          
           ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
           CACHE = sys.argv[2] if len(sys.argv) > 2 else None
           ASSETS = os.path.join(ROOT, "app/src/main/assets")
@@ -2876,8 +3197,10 @@ jobs:
               "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
               "https://overpass.private.coffee/api/interpreter"]
           DEADLINE = time.time() + float(os.environ.get("TRACKS_MAX_SECONDS", 3 * 60))
+          # Same projection as the map (build_map.py): metres east and south of central Singapore.
           LAT0, LON0 = 1.3521, 103.8198
           KX, KY = 111320 * math.cos(math.radians(LAT0)), 110574
+          # line: (route in the app's station order, the same route the other way, how to find it by name if the ids change)
           ROUTES = {
               "SEN": (2353581, 9663249, '["type"="route"]["route"="monorail"]["name"~"Sentosa Express"](1.22,103.80,1.27,103.85)'),
               "RTS": (19927885, 19927886, '["type"="route"]["ref"="RTS"](1.40,103.70,1.50,103.82)'),
@@ -2886,18 +3209,23 @@ jobs:
           NAMES = {"SEN": "Sentosa Express", "RTS": "RTS Link"}
           NEAR = 600            # a station must be within this many metres of the track
           report = []
+
           def say(line=""):
               print(line)
               report.append(line)
+
           def finish():
               if SUMMARY:
                   with open(SUMMARY, "a") as f:
                       f.write("## RTS Link and Sentosa Express tracks\n\n" + "\n".join(report) + "\n")
               sys.exit(0)
+
           def to_xy(lat, lon):
               return (lon - LON0) * KX, -(lat - LAT0) * KY
+
           def dist(a, b):
               return math.hypot(a[0] - b[0], a[1] - b[1])
+
           def app_lines():
               """The app's stations for each line here (in order) and where they are on its map."""
               html = open(os.path.join(ASSETS, "index.html"), encoding="utf-8").read()
@@ -2910,6 +3238,7 @@ jobs:
                   if len(seq) >= 2 and all(c in pos for c in seq):
                       out[code] = [(c, tuple(pos[c])) for c in seq]
               return out
+
           def overpass():
               ids = ",".join(str(i) for a, b, _ in ROUTES.values() for i in (a, b))
               by_name = "".join(f"relation{q};" for _, _, q in ROUTES.values())
@@ -2932,6 +3261,7 @@ jobs:
                           last = f"{type(e).__name__}: {e}"
                       time.sleep(2 + attempt * 6)
               raise RuntimeError(last)
+
           def track_of(rel):
               """The route's track as one line of map points, joining its ways end to end in the route's order."""
               ways = [[to_xy(p["lat"], p["lon"]) for p in m["geometry"] if p]
@@ -2948,11 +3278,13 @@ jobs:
                   gap, base, nxt = min(options, key=lambda o: o[0])
                   line = base + (nxt[1:] if gap < 1 else nxt)
               return line
+
           def along(line):
               cum = [0.0]
               for i in range(1, len(line)):
                   cum.append(cum[-1] + dist(line[i - 1], line[i]))
               return cum
+
           def place(line, cum, p):
               """How far along the track the point nearest to p is, and how far p is from the track."""
               best = (1e18, 0.0)
@@ -2965,6 +3297,7 @@ jobs:
                   if d < best[0]:
                       best = (d, cum[i] + t * math.sqrt(L2))
               return best[1], best[0]
+
           def simplify(pts, tol):
               if len(pts) < 3:
                   return pts
@@ -2979,6 +3312,7 @@ jobs:
               if dmax <= tol:
                   return [a, b]
               return simplify(pts[: idx + 1], tol)[:-1] + simplify(pts[idx:], tol)
+
           def cut(line, stations):
               """One path per pair of neighbouring stations, along the track; None if the track doesn't fit."""
               cum = along(line)
@@ -2999,6 +3333,7 @@ jobs:
                   pts = simplify(pts, 4)
                   paths.append([v for q in pts for v in (round(q[0]), round(q[1]))])
               return paths, f"{len(line)} track points, {sum(len(p) // 2 for p in paths)} kept"
+
           def build(elements, lines):
               rels = {e["id"]: e for e in elements if e.get("type") == "relation"}
               paths, used = {}, {}
@@ -3007,6 +3342,7 @@ jobs:
                       say(f"⚠️ {code}: the app's page has no stations for this line, so it's skipped.")
                       continue
                   names = NAMES[code]
+                  # the route in station order first, then the other way, then anything found by name
                   tries = [r for r in (rels.get(fwd), rels.get(back)) if r]
                   tries += [r for i, r in rels.items() if i not in (fwd, back) and r.get("tags", {}).get(
                       "name" if code == "SEN" else "ref", "").startswith("Sentosa Express" if code == "SEN" else "RTS")]
@@ -3027,6 +3363,7 @@ jobs:
                   else:
                       say(f"⚠️ {names}: {why}, so this download can't be used for it.")
               return paths, used
+
           def main():
               try:
                   lines = app_lines()
@@ -3044,6 +3381,7 @@ jobs:
                       paths, used = {}, {}
                       say(f"⚠️ OpenStreetMap couldn't be reached ({e}).")
                   if paths and old:
+                      # a line OpenStreetMap didn't give a usable track for this time keeps its saved one
                       for code, segs in old.get("paths", {}).items():
                           if code not in paths and code in lines and len(segs) == len(lines[code]) - 1:
                               paths[code], used[code] = segs, old.get("rel", {}).get(code)
@@ -3069,16 +3407,33 @@ jobs:
                       say("No saved tracks either, so both lines stay as straight lines this time.")
               except Exception as e:
                   say(f"⚠️ The tracks step hit an error ({type(e).__name__}: {e}). Both lines stay as straight lines.")
+
           main()
           finish()
           MRTAPP_EOF
+      - name: Add timetable intelligence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('mrt-tracker-app/app/src/main/assets/index.html')
+          h=p.read_text(encoding='utf-8')
+          s=Path('data/mrt-intelligence.js').read_text(encoding='utf-8')
+          tag='<script>'+s+'</script>'
+          if 'mrt-intelligence-v2' not in h:
+              i=h.lower().rfind('</body>')
+              h=h[:i]+tag+'\n'+h[i:] if i>=0 else h+tag
+              p.write_text(h,encoding='utf-8')
+          PY
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+
       - name: Create a signing key on the first run
         run: |
           mkdir -p signing
@@ -3092,8 +3447,14 @@ jobs:
             git commit -m "Add app signing key [skip ci]"
             git push
           fi
+
+      # Downloads LTA's official train timetable and packs it into the app.
+      # Never fails the build: without it, the app falls back to estimated times.
       - name: Fetch LTA train timetable
         run: python3 mrt-tracker-app/tools/build_timetable.py mrt-tracker-app data/lta-timetable.json
+
+      # The last good timetable is kept in this repository (data/lta-timetable.json), so a build
+      # where LTA's download fails still packs LTA's timetable instead of falling back to estimates.
       - name: Keep the timetable for next time
         run: |
           if [ -f data/lta-timetable.json ] && [ -n "$(git status --porcelain data/lta-timetable.json)" ]; then
@@ -3104,283 +3465,36 @@ jobs:
             git pull --rebase --autostash || true
             git push || echo "::warning::The timetable couldn't be saved to the repository this time. This version of the app still has it."
           fi
+
+      # Building outlines and heights from OpenStreetMap near every station, for the 3D buildings on
+      # the map. A copy is kept between builds, so OpenStreetMap is only asked again once a month.
+      # Never fails the build: without it, the map just has no buildings.
       - name: Restore saved buildings
         uses: actions/cache/restore@v4
         with:
           path: osm-cache
           key: osm-buildings-v1-${{ github.run_id }}
           restore-keys: osm-buildings-v1-
+
       - name: Fetch buildings from OpenStreetMap
         run: python3 mrt-tracker-app/tools/build_buildings.py mrt-tracker-app osm-cache
+
       - name: Fetch RTS Link and Sentosa Express tracks from OpenStreetMap
         run: |
           if [ -f mrt-tracker-app/tools/build_tracks.py ]; then
             python3 mrt-tracker-app/tools/build_tracks.py mrt-tracker-app osm-cache
           fi
+
       - name: Save buildings for next time
         if: hashFiles('osm-fresh') != ''
         uses: actions/cache/save@v4
         with:
           path: osm-cache
           key: osm-buildings-v1-${{ github.run_id }}
-      - name: Build timetable intelligence layer
-        run: |
-          mkdir -p mrt-tracker-app/app/src/main/assets
-          if [ -f data/lta-timetable.json ]; then cp data/lta-timetable.json mrt-tracker-app/app/src/main/assets/intelligence-timetable.json; else echo '{}' > mrt-tracker-app/app/src/main/assets/intelligence-timetable.json; fi
-          cat > /tmp/intelligence.html <<'INTELLIGENCE_EOF'
-<script>
-(function () {
-  "use strict";
-  // MRT Timetable Intelligence Engine
-  // Combines timetable candidates, station sequence, live/inferred observations and
-  // high-confidence manual sightings. Manual sightings become temporary anchors so
-  // an inference cannot immediately overwrite what the user actually saw.
-  const KEY = "mrt-intelligence-v2";
-  const state = { anchors:{}, observations:[], journeys:[], stationGraph:{}, lastScan:0 };
-  const norm = s => String(s || "").trim().toUpperCase()
-    .replace(/[‐‑‒–—]/g,"-").replace(/\s+/g," ");
-  const stationNorm = s => norm(s).replace(/[^A-Z0-9]/g,"");
-  const idNorm = s => norm(s).replace(/\s+/g,"");
-  const now = () => Date.now();
-  function load() {
-    try {
-      const x = JSON.parse(localStorage.getItem(KEY) || "{}");
-      if (x && typeof x === "object") Object.assign(state, x);
-    } catch (_) {}
-    state.anchors = state.anchors || {};
-    state.observations = Array.isArray(state.observations) ? state.observations : [];
-    state.journeys = Array.isArray(state.journeys) ? state.journeys : [];
-  }
-  function save() {
-    try {
-      state.observations = state.observations.slice(-500);
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch (_) {}
-  }
-  function minutes(t) {
-    if (typeof t === "number") return t;
-    const m = String(t || "").match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-    if (!m) return null;
-    let h = +m[1], min = +m[2];
-    if (h < 24) return h * 60 + min;
-    return null;
-  }
-  function clockDistance(a,b) {
-    let d = Math.abs(a-b);
-    return Math.min(d, 1440-d);
-  }
-  // Generic GTFS/JSON timetable reader. It accepts the normal GTFS shape as well as
-  // compact arrays produced by the app's timetable builder.
-  function ingestTimetable(data) {
-    if (!data || typeof data !== "object") return;
-    const trips = Array.isArray(data.trips) ? data.trips : [];
-    const stops = Array.isArray(data.stop_times) ? data.stop_times : [];
-    const stopNames = {};
-    (Array.isArray(data.stops) ? data.stops : []).forEach(s => {
-      const id = s.stop_id || s.id || s.code;
-      if (id) stopNames[id] = s.stop_name || s.name || id;
-    });
-    const byTrip = {};
-    stops.forEach(s => {
-      const tid = s.trip_id || s.trip || s.journey_id;
-      if (!tid) return;
-      (byTrip[tid] ||= []).push({
-        seq:+(s.stop_sequence ?? s.sequence ?? 0),
-        id:s.stop_id || s.station_id || s.station || s.code,
-        name:s.stop_name || s.station_name || stopNames[s.stop_id] || s.name || s.station,
-        arr:minutes(s.arrival_time || s.arrival || s.time),
-        dep:minutes(s.departure_time || s.departure || s.time)
-      });
-    });
-    const out=[];
-    Object.keys(byTrip).forEach(tid=>{
-      const a=byTrip[tid].filter(x=>x.id||x.name).sort((x,y)=>x.seq-y.seq);
-      if(a.length<2)return;
-      const meta=trips.find(t=>(t.trip_id||t.id||t.journey_id)==tid)||{};
-      out.push({id:tid,line:meta.route_id||meta.line_id||meta.line||"",dir:meta.direction_id??meta.direction??"",stops:a});
-    });
-    if(!out.length && Array.isArray(data.journeys)) {
-      data.journeys.forEach((j,i)=>{
-        const a=(j.stops||j.stations||[]).map((s,k)=>({
-          seq:k,id:s.id||s.code||s.station,name:s.name||s.station_name,
-          arr:minutes(s.arrival||s.arrival_time||s.time),
-          dep:minutes(s.departure||s.departure_time||s.time)
-        }));
-        if(a.length>1) out.push({id:j.id||j.trip_id||("J"+i),line:j.line||j.route_id||"",dir:j.direction||j.direction_id||"",stops:a});
-      });
-    }
-    if(out.length) state.journeys=out;
-    buildGraph();
-    save();
-  }
-  function buildGraph() {
-    const g={};
-    state.journeys.forEach(j=>{
-      j.stops.forEach((s,i)=>{
-        const k=stationNorm(s.name||s.id);
-        if(!k)return;
-        (g[k] ||= {next:{},prev:{}}); 
-        if(j.stops[i+1]) {
-          const n=stationNorm(j.stops[i+1].name||j.stops[i+1].id);
-          if(n) g[k].next[n]=(g[k].next[n]||0)+1;
-        }
-        if(j.stops[i-1]) {
-          const p=stationNorm(j.stops[i-1].name||j.stops[i-1].id);
-          if(p) g[k].prev[p]=(g[k].prev[p]||0)+1;
-        }
-      });
-    });
-    state.stationGraph=g;
-  }
-  function scoreJourney(j, station, t, trainId) {
-    const s=stationNorm(station), candidates=[];
-    j.stops.forEach((x,i)=>{
-      if(stationNorm(x.name||x.id)!==s)return;
-      const scheduled=x.arr ?? x.dep;
-      let score=0;
-      if(scheduled!=null && t!=null) score += Math.max(0,100-clockDistance(scheduled,t)*4);
-      score += Math.min(25, i/Math.max(1,j.stops.length)*25);
-      if(trainId && norm(j.id)===norm(trainId)) score+=100;
-      candidates.push({score,j,i,stop:x});
-    });
-    return candidates;
-  }
-  function candidates(trainId,station,time) {
-    const t=minutes(time);
-    return state.journeys.flatMap(j=>scoreJourney(j,station,t,trainId))
-      .sort((a,b)=>b.score-a.score).slice(0,8);
-  }
-  function record(o) {
-    if(!o || !o.trainId || !o.station) return null;
-    const obs={
-      id:"O"+Date.now()+Math.random().toString(36).slice(2,7),
-      source:o.source||"manual", trainId:idNorm(o.trainId),
-      station:String(o.station), time:o.time||new Date().toISOString(),
-      ts:o.ts||now(), direction:o.direction||"", confidence:o.confidence??100
-    };
-    const cs=candidates(obs.trainId,obs.station,minutes(obs.time));
-    obs.candidates=cs.map(x=>({journey:x.j.id,line:x.j.line,index:x.i,score:x.score}));
-    state.observations.push(obs);
-    // Manual sightings are hard anchors for 30 minutes. A newer manual sighting replaces it.
-    if(obs.source==="manual" || obs.confidence>=95) {
-      state.anchors[obs.trainId]={station:obs.station,ts:obs.ts,until:obs.ts+30*60000,
-        confidence:Math.max(95,obs.confidence),direction:obs.direction||"",source:obs.source};
-    }
-    save();
-    return {observation:obs,candidates:cs};
-  }
-  function anchor(trainId) {
-    const a=state.anchors[idNorm(trainId)];
-    if(!a) return null;
-    if(a.until && a.until<now()){ delete state.anchors[idNorm(trainId)]; save(); return null; }
-    return a;
-  }
-  function acceptInference(trainId,station,source,confidence,ts) {
-    const a=anchor(trainId);
-    if(a && a.confidence>=95 && a.ts>=((ts||now())-30*60000)) {
-      return {station:a.station,source:a.source,confidence:a.confidence,anchored:true};
-    }
-    return {station,source:source||"inferred",confidence:confidence||0,anchored:false};
-  }
-  // Reject physically implausible station jumps when two observations are close in time.
-  function plausible(trainId,station,ts) {
-    const id=idNorm(trainId), prev=state.observations.filter(o=>o.trainId===id)
-      .sort((a,b)=>b.ts-a.ts)[0];
-    if(!prev) return {ok:true,penalty:0};
-    const dt=Math.abs((ts||now())-prev.ts)/60000;
-    if(dt>20)return {ok:true,penalty:0};
-    const g=state.stationGraph[stationNorm(prev.station)];
-    if(!g)return {ok:true,penalty:0};
-    const target=stationNorm(station);
-    if(g.next[target] || g.prev[target]) return {ok:true,penalty:0};
-    return {ok:false,penalty:70};
-  }
-  // Public API for the existing spotting UI or future code.
-  window.mrtReportSighting=function(trainId,station,time,direction){
-    return record({trainId,station,time,direction,source:"manual",confidence:100});
-  };
-  window.mrtGetTrainTruth=function(trainId){
-    const a=anchor(trainId);
-    if(a)return {station:a.station,confidence:a.confidence,source:"manual",anchored:true,ageMs:now()-a.ts};
-    const o=state.observations.filter(x=>x.trainId===idNorm(trainId)).sort((a,b)=>b.ts-a.ts)[0];
-    return o ? {station:o.station,confidence:o.confidence,source:o.source,anchored:false,ageMs:now()-o.ts} : null;
-  };
-  window.mrtScoreSighting=function(trainId,station,time){ return candidates(trainId,station,minutes(time)); };
-  window.mrtIntelligence={state,record,anchor,acceptInference,plausible,ingestTimetable};
-  function discoverLocalSightingLogs(){
-    // Learn from existing app storage without changing its schema.
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i)||"";
-      if(!/(spot|sight|train.*log|log.*train)/i.test(k))continue;
-      try{
-        const v=JSON.parse(localStorage.getItem(k));
-        const arr=Array.isArray(v)?v:(v&&Array.isArray(v.items)?v.items:null);
-        if(!arr)return;
-        arr.slice(-50).forEach(x=>{
-          const train=x.trainId||x.train||x.r||x.run||x.set;
-          const station=x.station||x.stationName||x.stn;
-          const tm=x.time||x.timestamp||x.ts||x.loggedAt;
-          if(train&&station&&!state.observations.some(o=>o.trainId===idNorm(train)&&stationNorm(o.station)===stationNorm(station)&&String(o.time)===String(tm))){
-            record({trainId:train,station,time:tm,source:"manual",confidence:100,ts:typeof x.ts==="number"?x.ts:Date.parse(x.timestamp||x.loggedAt||"")||now()});
-          }
-        });
-      }catch(_){}
-    }
-  }
-  function visualGuard(){
-    // Keep a recent manual anchor visible even if a lower-confidence inference redraws the card.
-    Object.keys(state.anchors).forEach(id=>{
-      const a=anchor(id); if(!a)return;
-      const nodes=[...document.querySelectorAll("body *")].filter(n=>n.children.length===0);
-      const hits=nodes.filter(n=>idNorm(n.textContent||"").includes(id));
-      hits.forEach(n=>{
-        let p=n.parentElement;
-        for(let depth=0;depth<5 && p;depth++,p=p.parentElement){
-          const t=(p.textContent||"");
-          if(t.length>20 && /(depart|arriv|heading|next|station|platform)/i.test(t)){
-            if(!p.querySelector(".mrt-intel-anchor")){
-              const badge=document.createElement("span");
-              badge.className="mrt-intel-anchor";
-              badge.textContent="  • spotted "+a.station;
-              badge.title="Manual sighting anchor — "+Math.round((now()-a.ts)/60000)+" min old";
-              badge.style.cssText="font-size:11px;font-weight:700;opacity:.9;margin-left:4px";
-              p.appendChild(badge);
-            }
-            break;
-          }
-        }
-      });
-    });
-  }
-  load();
-  discoverLocalSightingLogs();
-  // Watch storage updates made by the existing app.
-  window.addEventListener("storage",()=>{discoverLocalSightingLogs();visualGuard();});
-  setInterval(()=>{discoverLocalSightingLogs();visualGuard();},2500);
-  // Load a packed timetable when the build provides one.
-  fetch("intelligence-timetable.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
-    .then(ingestTimetable).catch(()=>{});
-  // Also expose a compact debug snapshot for Dev mode.
-  window.mrtIntelligenceSnapshot=function(){
-    return {anchors:Object.keys(state.anchors).map(k=>[k,state.anchors[k]]),
-      observations:state.observations.slice(-20),journeys:state.journeys.length,
-      graphStations:Object.keys(state.stationGraph).length};
-  };
-})();
-</script>
-INTELLIGENCE_EOF
-          python3 - <<'PY'
-from pathlib import Path
-p=Path('mrt-tracker-app/app/src/main/assets/index.html')
-h=p.read_text(encoding='utf-8')
-s=Path('/tmp/intelligence.html').read_text(encoding='utf-8')
-if 'MRT Timetable Intelligence Engine' not in h:
-    pos=h.lower().rfind('</body>')
-    h=h[:pos]+s+'\n'+h[pos:] if pos>=0 else h+'\n'+s
-    p.write_text(h,encoding='utf-8')
-PY
+
       - name: Build the app
         env:
+          # Claude API key for the Ask tab (optional). Without it, the Ask tab gives built-in answers.
           ORG_GRADLE_PROJECT_aiKey: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -n "$ORG_GRADLE_PROJECT_aiKey" ]; then
@@ -3388,22 +3502,30 @@ PY
           else
             echo "🤖 **Ask tab:** built-in answers only. Add an ANTHROPIC_API_KEY secret to let Claude answer." >> "$GITHUB_STEP_SUMMARY"
           fi
+          # Version from the build time, so every new build installs over the last one,
+          # whatever this workflow file is called.
           VC=$(( ( $(date +%s) - 1767225600 ) / 60 ))
           VN=$(TZ=Asia/Singapore date +%Y.%m.%d-%H%M)
           APK=mrt-tracker.apk
           if [ "$CHANNEL" = "dev" ]; then VN="$VN-dev"; APK=mrt-dev.apk; fi
           echo "VN=$VN" >> "$GITHUB_ENV"
           echo "APK=$APK" >> "$GITHUB_ENV"
+          # The public repo the app checks for updates. MRT Dev is private, so it isn't put there and
+          # doesn't check for updates: each new build is installed from this repo's Releases.
           UPDATE_REPO="${{ github.repository_owner }}/mrt-tracker-releases"
           if [ "$CHANNEL" = "dev" ]; then UPDATE_REPO=""; fi
           gradle -p mrt-tracker-app assembleRelease -Pvc=$VC -Pvn=$VN -Pchannel="$CHANNEL" -PupdateRepo="$UPDATE_REPO" -Pks="$GITHUB_WORKSPACE/signing/mrt-tracker.jks"
           cp mrt-tracker-app/app/build/outputs/apk/release/app-release.apk "$APK"
           printf '{"versionCode":%s,"versionName":"%s"}\n' "$VC" "$VN" > version.json
+
+      # APKs are published directly to the appropriate GitHub Release below.
+      # Do not upload a separate Actions artifact: that creates a second, confusing APK download.
       - name: Publish to Releases
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # MRT Tracker goes in the "latest" release; MRT Dev in a separate "dev" pre-release.
           if [ "$CHANNEL" = "dev" ]; then
             gh release delete dev --yes --cleanup-tag || true
             gh release create dev "$APK" --title "MRT Dev $VN" --prerelease --latest=false \
@@ -3413,6 +3535,10 @@ PY
             gh release create latest "$APK" --title "MRT Tracker $VN" \
               --notes "Download mrt-tracker.apk on your Android phone and open it to install."
           fi
+
+      # Publishes MRT Tracker to your public "mrt-tracker-releases" repo, where the app looks for
+      # updates. Needs the RELEASES_TOKEN secret; skipped if it isn't set. MRT Dev is never published
+      # there (it's only for you); a dev build removes any copy an older build put there.
       - name: Publish update for the app
         env:
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}

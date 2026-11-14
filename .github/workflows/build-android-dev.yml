@@ -53,6 +53,10 @@ jobs:
             git push
           fi
 
+      # Experimental official geometry overlay. Non-fatal; existing map geometry remains the primary route source.
+      - name: Fetch URA MRT rail geometry
+        run: python3 mrt-tracker-app/tools/build_ura_rail.py mrt-tracker-app
+
       # Downloads LTA's official train timetable and packs it into the app.
       # Never fails the build: without it, the app falls back to estimated times.
       - name: Fetch LTA train timetable

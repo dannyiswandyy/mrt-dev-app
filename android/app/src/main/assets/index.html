@@ -9112,7 +9112,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const rows = [], dis = [];
     for (const r of favDeps(e, 6)){
       if (r.opens){ rows.push({c: colOf(r.line), l: lineLabel(r.line), to: `${r.code} opens ${r.opens}`, t: []}); continue; }
-      rows.push({c: colOf(r.line), l: lineLabel(r.line), to: toW(r.to), t: r.items.map(it => Math.round((now + it.m * 60000) / 1000) * 1000), sb: r.items[0] && r.items[0].sb ? r.items[0].sb[1] : "", d: !!r.dis});
+      rows.push({c: colOf(r.line), l: lineLabel(r.line), to: toW(r.to), t: r.items.map(it => Math.round((now + it.m * 60000) / 1000) * 1000), sb: r.items[0] && r.items[0].sb ? r.items[0].sb[1] : "", d: !!r.dis, plat: r.plat || ""});
       if (r.dis && !dis.includes(r.line)) dis.push(r.line);
     }
     let dtext = "";
@@ -9120,11 +9120,33 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       const msg = alertState && alertState.messages && alertState.messages[0] ? alertState.messages[0].text : "";
       dtext = `Disruption on the ${dis.map(lineFull).join(" and ")}${msg ? ": " + msg : ""}`.slice(0, 160);
     }
-    return {at: now, st: name, codes: (byName[name] || []).map(x => x[1]).join(" "), rows: rows.slice(0, 4), dis: dtext};
+    return Object.assign({at: now, st: name, codes: (byName[name] || []).map(x => x[1]).join(" "), rows: rows.slice(0, 6), dis: dtext}, widgetLive());
   }
+  /* For widgets showing any station: LTA's live delays (trip id -> seconds), cancelled trips, and lines with a disruption. */
+  function widgetLive(){
+    const live = {}, gone = [];
+    let st = null; try { st = rtState; } catch(e){}
+    if (st && st.trips && Date.now() - st.at < 10 * 60e3) for (const [id, u] of Object.entries(st.trips)){ if (u.x) gone.push(id); else if (u.d) live[id] = u.d; }
+    let disLines = []; try { disLines = [...disruptedLines()]; } catch(e){}
+    return {live, gone, disLines};
+  }
+  /* What widgets need to work trains out by themselves: line colours and names, where each direction goes,
+     public holidays (Sunday timetable), and the slower trains (SLOW). Sent when the app opens. */
+  function pushWidgetMeta(){
+    if (!has("widgetMeta")) return;
+    const iso = sgNow().iso, lines = {};
+    for (const c of TT_LINES){
+      const L = LINES[c]; if (!L) continue;
+      const act = activeStations(L, iso);
+      lines[c] = {c: colOf(c), l: lineFull(c), dest: [dest(L, 0, act), dest(L, 1, act)], slow: [slowPerStop(c, 0) * 60, slowPerStop(c, 1) * 60]};
+    }
+    call("widgetMeta", JSON.stringify({ph: Object.keys(PH_DAYS), lines}));
+  }
+  window.appOpenStation = name => { if (aByName(name)) hxOpen({type: "station", name}, false); };   // a widget was tapped
+  setTimeout(pushWidgetMeta, 3000);
   function pushWidget(force){
     if (!has("widgetData") || !realTime()) return;
-    const s = widgetSnap(), sig = JSON.stringify([s.st, s.dis, s.rows.map(r => [r.to, r.t.slice(0, 2).map(t => Math.round(t / 60000))])]);
+    const s = widgetSnap(), sig = JSON.stringify([s.st, s.dis, s.disLines, s.live, s.gone, s.rows.map(r => [r.to, r.t.slice(0, 2).map(t => Math.round(t / 60000))])]);
     if (!force && sig === wSig && Date.now() - wAt < 300000) return;
     wSig = sig; wAt = Date.now();
     call("widgetData", JSON.stringify(s));

@@ -87,11 +87,13 @@ public class MainActivity extends Activity {
     };
     // DEV:END
     private static java.lang.ref.WeakReference<MainActivity> current = new java.lang.ref.WeakReference<>(null);
+    private static android.content.Context appContext = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
+        appContext = getApplicationContext();
         prefs.edit().remove("spot_host").apply();   // spotter feed from older versions is no longer used
         prefs.edit().remove("lta_key").apply();   // keys typed into older versions are no longer used
         getSharedPreferences("game", MODE_PRIVATE).edit().clear().apply();   // the spotting game was removed
@@ -203,6 +205,11 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 pageLoaded = true;
+                if (widgetStation != null) {                // opened from a widget: show its station
+                    final String js = "window.appOpenStation && window.appOpenStation(" + JSONObject.quote(widgetStation) + ")";
+                    widgetStation = null;
+                    web.evaluateJavascript(js, null);
+                }
                 checkForUpdate();
             }
 
@@ -224,6 +231,7 @@ public class MainActivity extends Activity {
         Alerts.schedule(this);
         // LTA's timetable: checked for a new one every 6 hours or so, even while the app is closed
         Timetable.schedule(this);
+        openFromWidget(getIntent());
         if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("asked_notify", false)
                 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             prefs.edit().putBoolean("asked_notify", true).apply();
@@ -235,6 +243,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        openFromWidget(intent);
         checkForUpdate();
     }
 
@@ -256,12 +265,24 @@ public class MainActivity extends Activity {
      * loads, so load it again: straight away if the app isn't on screen, else the next time it's brought back.
      */
     static void timetableUpdated() {
+        if (appContext != null) TrainWidget.updateAll(appContext);   // widgets use the new timetable too
         MainActivity a = current.get();
         if (a == null) return;                     // the app isn't open: it uses the new timetable when it next starts
         a.runOnUiThread(() -> {
             if (a.resumed) a.timetablePending = true;
             else if (a.pageLoaded) a.web.reload();
         });
+    }
+
+    /** A home screen widget was tapped: open its station (now, or once the page has loaded). */
+    private String widgetStation = null;
+
+    private void openFromWidget(Intent intent) {
+        String st = intent == null ? null : intent.getStringExtra(TrainWidget.EXTRA_STATION);
+        if (st == null || st.isEmpty()) return;
+        intent.removeExtra(TrainWidget.EXTRA_STATION);
+        if (pageLoaded) web.evaluateJavascript("window.appOpenStation && window.appOpenStation(" + JSONObject.quote(st) + ")", null);
+        else widgetStation = st;
     }
 
     /** Asks GitHub whether a newer version exists; if so, the page shows the update banner. */
@@ -714,8 +735,15 @@ public class MainActivity extends Activity {
         /** The home screen widget's data: the first saved station's next trains (small JSON from Home). */
         @JavascriptInterface
         public void widgetData(String json) {
-            if (json == null || json.length() > 16000) return;
+            if (json == null || json.length() > 64000) return;
             TrainWidget.save(getApplicationContext(), json);
+        }
+
+        /** What the widget needs to work out trains by itself: line colours and names, public holidays, slower trains. */
+        @JavascriptInterface
+        public void widgetMeta(String json) {
+            if (json == null || json.length() > 64000) return;
+            TrainWidget.saveMeta(getApplicationContext(), json);
         }
 
         /** "on", "ask" (Android may still ask the person) or "off" (blocked: only Settings can turn it on). */

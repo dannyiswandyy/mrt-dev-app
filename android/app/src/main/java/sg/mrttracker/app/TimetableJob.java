@@ -12,6 +12,7 @@ public class TimetableJob extends JobService {
             if (Timetable.due(getApplicationContext())
                     && "new".equals(Timetable.refresh(getApplicationContext()).optString("status"))) {
                 MainActivity.timetableUpdated();
+                TrainWidget.updateAll(getApplicationContext());     // the widget works its times out from the timetable too
             }
             jobFinished(params, false);
         }).start();

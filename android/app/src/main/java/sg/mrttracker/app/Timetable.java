@@ -79,6 +79,13 @@ final class Timetable {
         }
     }
 
+    /** Which timetable current() gives, as a short label that changes when the timetable does (for caches). */
+    static String version(Context c) {
+        File f = new File(c.getFilesDir(), FILE);
+        long inst = installedAt(c);
+        return f.exists() && f.length() > 0 && f.lastModified() > inst ? "live:" + f.lastModified() + ":" + f.length() : "app:" + inst;
+    }
+
     /** When this version of the app was installed (a newer app version packs a newer timetable). */
     private static long installedAt(Context c) {
         try {

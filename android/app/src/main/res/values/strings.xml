@@ -1,5 +1,5 @@
 <resources>
     <!-- app_name comes from app/build.gradle: MRT Tracker, or MRT Dev for the developer app -->
-              <string name="widget_desc">Next trains at your first saved station</string>
+              <string name="widget_desc">Next trains at a station you pick, with platforms and live delays</string>
     <string name="widget_empty">Save a station on Home to see its next trains here.</string>
 </resources>

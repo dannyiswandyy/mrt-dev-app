@@ -128,7 +128,11 @@ def overpass_places():
 # ---- LTA's official exits ----
 
 def get(url, timeout=90):
-    req = urllib.request.Request(url, headers={"User-Agent": "MRTTracker-build/1.0 (GitHub Actions; station exits)"})
+    headers = {"User-Agent": "MRTTracker-build/1.0 (GitHub Actions; station exits)"}
+    key = os.environ.get("DATA_GOV_SG_API_KEY", "").strip()
+    if key and "data.gov.sg" in url:
+        headers["x-api-key"] = key         # data.gov.sg's own key (repository secret), for higher limits
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 

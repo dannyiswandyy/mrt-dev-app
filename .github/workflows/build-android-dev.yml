@@ -92,7 +92,9 @@ jobs:
 
       # Station exits and the places near each one, from OpenStreetMap, for the station pages and the map.
       # Kept with the buildings between builds; never fails the build.
-      - name: Fetch station exits from OpenStreetMap
+      - name: Fetch station exits (LTA) and nearby places (OpenStreetMap)
+        env:
+          DATA_GOV_SG_API_KEY: ${{ secrets.DATA_GOV_SG_API_KEY }}
         run: |
           if [ -f mrt-tracker-app/tools/build_exits.py ]; then
             python3 mrt-tracker-app/tools/build_exits.py mrt-tracker-app osm-cache

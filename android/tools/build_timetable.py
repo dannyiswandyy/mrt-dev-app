@@ -81,14 +81,8 @@ def finish(ok):
     sys.exit(0)
 
 # ---------- the LTA key ----------
-def lta_key():
-    # Prefer the GitHub Actions secret so the DataMall credential is not needed in source.
-    env_key = os.environ.get("LTA_ACCOUNT_KEY", "").strip()
-    if env_key:
-        print("::add-mask::" + env_key)
-        return env_key
-
-    # Backward-compatible fallback for builds where the secret is not configured yet.
+def legacy_lta_key():
+    """Read the old in-repo key only as a compatibility fallback."""
     g = open(os.path.join(ROOT, "app/build.gradle")).read()
     m = re.search(r"LTA_KEY_X',\s*'\"([0-9a-f]+)\"'", g)
     if not m:
@@ -99,6 +93,13 @@ def lta_key():
     print("::add-mask::" + key)
     return key
 
+def lta_key():
+    # Prefer the GitHub Actions secret.
+    env_key = os.environ.get("LTA_ACCOUNT_KEY", "").strip()
+    if env_key:
+        print("::add-mask::" + env_key)
+        return env_key
+    return legacy_lta_key()
 def http(url, headers=None, tries=3):
     for t in range(tries):
         try:
@@ -240,7 +241,7 @@ def main():
         return process(z, data)
     key = lta_key()
     if not key:
-        say("⚠️ No LTA key found in the app, so the timetable was skipped.")
+        say("⚠️ No LTA key found, so the timetable was skipped.")
         finish(False)
     try:
         meta = http(API, {"AccountKey": key, "accept": "application/json"})
@@ -250,9 +251,25 @@ def main():
         data = http(link)
         z = zipfile.ZipFile(io.BytesIO(data))
     except Exception as e:
-        say(f"⚠️ Couldn't download the timetable from LTA ({e}).")
-        finish(False)
-
+        # If the new secret is rejected, retry with the previous compatibility key.
+        env_key = os.environ.get("LTA_ACCOUNT_KEY", "").strip()
+        fallback = legacy_lta_key() if env_key and key == env_key else ""
+        if fallback and fallback != key:
+            try:
+                say("⚠️ LTA_ACCOUNT_KEY was rejected; retrying with the compatibility key.")
+                meta = http(API, {"AccountKey": fallback, "accept": "application/json"})
+                link = find_link(json.loads(meta))
+                if not link:
+                    raise ValueError("LTA's fallback reply had no download link.")
+                data = http(link)
+                z = zipfile.ZipFile(io.BytesIO(data))
+                say("✅ LTA DataMall accepted the compatibility key.")
+            except Exception:
+                say(f"⚠️ Couldn't download the timetable from LTA ({e}).")
+                finish(False)
+        else:
+            say(f"⚠️ Couldn't download the timetable from LTA ({e}).")
+            finish(False)
     return process(z, data)
 
 def process(z, data):

@@ -5887,9 +5887,21 @@ let REPS = (() => { try { const v = JSON.parse(localStorage.getItem("trainReport
 const repSave = () => { try { localStorage.setItem("trainReports", JSON.stringify(REPS.slice(-60))); } catch(e){} };
 let repOpenNow = false, repForm = null, repMsgText = "";
 /* Where a reported train is: the same way the app works out its own trains. */
+/* Spotting dwell model: official MRT dwell is about 35–60s at interchanges and 30–50s elsewhere.
+   A terminal sighting is treated separately so a train does not get pulled through the terminus while turning back.
+   Terminal turnaround is an operational estimate, not an LTA-published dwell figure. */
+const spotDwell = (code, st, L) => {
+  const act = L && L.stations ? L.stations : [];
+  const terminal = st === 0 || st === act.length - 1 || (L && L.shuttle && st === act.length - 1);
+  if (!terminal) return Number(L?.dwell) || 0.5;
+  const learned = window.mrtTimetablePolicy?.learnedDwell ? window.mrtTimetablePolicy.learnedDwell(code, act[st]?.[0] || "") : null;
+  if (learned && learned.median > 0) return learned.median / 60;
+  return 105 / 60;
+};
 function repRun(r, n, L){
   const T = legsOf(r.line, r.dir, n), a = r.dir ? (n - 1) - r.st : r.st;
-  const e = r.between ? T.off[a] + (T.run[a] || 0) / 2 : Math.max(0, T.off[a] - L.dwell / 2);
+  const dwell = spotDwell(r.line, r.st, L);
+  const e = r.between ? T.off[a] + (T.run[a] || 0) / 2 : Math.max(0, T.off[a] - dwell / 2);
   return {t: r.tm - e, a, b: n - 1, T};
 }
 const repToday = now => REPS.filter(r => r.iso === now.iso);
@@ -8672,7 +8684,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
      the usual run and stop times for the rest of its trip. Other trains aren't touched. It's the same "minutes to
      move a train by" the app already uses for reported trains (moved()), so the map, Line Board and next-train
      times all follow. Worked out once per change (log, day, timetable/estimates, Live cam correction). */
-  const ANCHOR_MAX = 15;                 // more than this off, and it can't have been that train
+  const ANCHOR_MAX = 5;                  // only link a sighting to a different timetable run when it is very close; otherwise keep it as a tag
+
   const svcMins = at => { let m = ((at / 60000 + 480) % 1440 + 1440) % 1440; if (m < 180) m += 1440; return m; };
   // every run on that line going that way which stops at station st, with the minutes it would need moving by
   function anchorRuns(code, dir, st, tm, kind, iso){

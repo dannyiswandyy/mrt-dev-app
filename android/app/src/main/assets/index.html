@@ -3391,7 +3391,7 @@ function mapDraw(){
 
   const path = (line, i) => { const p = MSEG[line][i].pts; ctx.moveTo(sx(p[0][0]), sy(p[0][1])); for (let k = 1; k < p.length; k++) ctx.lineTo(sx(p[k][0]), sy(p[k][1])); };
 
-  // Official URA alignment (experimental, underneath the existing coloured geometry).\n  drawURARail(ctx);\n  // disrupted stretches: red glow underneath
+  // URA master-plan geometry is kept as an asset for future line-specific matching.\n  // Do NOT paint the raw layer here: it contains future/proposed rail corridors and can\n  // snap to the wrong existing line (e.g. an orange diagonal through Woodlands).\n  // disrupted stretches: red glow underneath
   if (typeof alertState !== "undefined" && alertState && alertState.status === 2){
     ctx.strokeStyle = MC.bad; ctx.globalAlpha = 0.35; ctx.lineWidth = lw * 3;
     for (const sg of alertState.segments) for (const c of (sg.lines || [])){

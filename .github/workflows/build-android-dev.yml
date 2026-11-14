@@ -3014,6 +3014,25 @@ jobs:
               print(m.group(0).replace('\\n',' ')[:700])
           PY
 
+          # DEV spotting-report trace: print the complete report functions without interleaving.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          h=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
+          for name in ['repCandidates','repRender','repOpen','repClose','repSubmit','repShift','repRun','repToday']:
+              m=re.search(r'function\\s+'+name+r'\\s*\\([^)]*\\)\\s*\\{',h)
+              if m:
+                  n=re.search(r'\\nfunction\\s+',h[m.end():])
+                  end=m.end()+ (n.start() if n else 9000)
+                  print('--- FUNC '+name+' ---')
+                  print(h[m.start():min(end,m.start()+9000)])
+          print('--- REPORT EVENT/RENDER REFS ---')
+          for pat in ['repOpenBtn','repEntry','repCount','trainReports','REPS\\.push','repForm','repMsgText']:
+              print('PAT',pat)
+              for m in list(re.finditer(pat,h))[:12]:
+                  print(h[max(0,m.start()-500):min(len(h),m.end()+1200)].replace('\\n',' ')[:1800])
+          PY
+
           # Mobile map paint guard: the restored page already has the real train-position
           # renderer, but WebView resume/layout can leave the canvas dirty without a repaint.
           # Repaint after layout/resume so train arrows, map count and map overlays stay visible.

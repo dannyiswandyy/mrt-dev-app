@@ -985,6 +985,11 @@ select,input[type="time"],input[type="text"],textarea{
 .dirrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--soft);font-size:14px}
 .dirrow .ln{width:6px;height:22px;border-radius:3px;background:var(--c)}
 .dirrow .to{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dirrow .fl{font-size:11px;opacity:.6;font-weight:500}
+.sp-sets{display:grid;gap:6px}
+.sp-sets button{display:flex;justify-content:space-between;gap:8px;align-items:center;text-align:left;padding:8px 10px;border:1px solid var(--soft);border-left:4px solid var(--c);border-radius:10px;background:none;color:inherit;font:inherit}
+.sp-sets button.on{outline:2px solid var(--c)}
+.sp-sets span{font-size:12px;opacity:.7}
 .dirrow .t{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted);font-size:13px;text-align:right}
 .dirrow .t em{font-style:normal;color:var(--fg);font-weight:600;font-size:15px}
 .dirrow .t .sbc{font:700 10px var(--display);font-style:normal;color:var(--fg);margin-left:3px;letter-spacing:.02em}
@@ -8750,7 +8755,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
         const arr = nextArrivals(x.line, i, d, now, cnt || 3), to = dest(L, d, act);
         const items = arr.map((m, k) => ({m, sb: isShortTo(L, d, act, arr.to[k]) ? act[arr.to[k]] : null, last: isLastCall(x.line, i, d, now, m)}));
         const dis = segs.some(sg => (sg.lines || [sg.line]).includes(x.line) && (sg.codes || []).includes(x.code) && dirOk(sg, to));
-        out.push({line: x.line, code: x.code, to, items, dis, plat: platOf(x.line, i, d)});
+        out.push({line: x.line, code: x.code, to, items, dis, plat: platOf(x.line, i, d), i, d});
       }
     }
     return out;
@@ -8762,6 +8767,14 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
   };
   const mins = m => m < 0.75 ? "Now" : String(Math.round(m));
 
+  /* First and last train each way, for the Home cards: from the timetable on the phone, so it works offline too. */
+  const flCache = new Map();
+  function firstLast(line, i, d){
+    if (i == null) return null;
+    const now = sgNow(), k = line + "|" + i + "|" + d + "|" + now.iso + "|" + (SIM.est ? 1 : 0);
+    if (!flCache.has(k)){ if (flCache.size > 200) flCache.clear(); let s = null; try { s = stopTimes(line, i, d, now); } catch(e){} flCache.set(k, s); }
+    return flCache.get(k);
+  }
   /* ---- Home ---- */
   function favCard(name){
     const e = aByName(name); if (!e) return "";
@@ -8770,7 +8783,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       if (r.opens) return `<div class="dirrow" style="--c:var(--${r.line})"><span class="ln"></span><span class="to">${esc(r.code)} opens ${esc(r.opens)}</span><span class="t"></span></div>`;
       const f = r.items[0];
       const t = !f ? (r.dis ? "No service · disruption" : "No more trains") : `<em>${fmt(f.m)}</em>${f.sb ? `<i class="sbc" title="Ends at ${esc(f.sb[1])}">→${esc(f.sb[0])}</i>` : ""}${r.items.slice(1).map(x => " · " + mins(x.m)).join("")}`;
-      return `<div class="dirrow" style="--c:var(--${r.line})"><span class="ln"></span><span class="to">${esc(toW(r.to))}${f && f.sb ? ` <span class="sb">next ends at ${esc(f.sb[1])}</span>` : ""}</span><span class="t">${t}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span></div>`;
+      const ft = firstLast(r.line, r.i, r.d), fl = !ft ? "" : !f || f.m > 120 ? ` <small class="fl">first ${clockText(ft.first)}</small>` : ` <small class="fl">last ${clockText(ft.last)}</small>`;
+      return `<div class="dirrow" style="--c:var(--${r.line})"><span class="ln"></span><span class="to">${esc(toW(r.to))}${fl}${f && f.sb ? ` <span class="sb">next ends at ${esc(f.sb[1])}</span>` : ""}</span><span class="t">${t}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span></div>`;
     }).join("");
     return `<button type="button" class="fav" data-fav="${esc(name)}"><div class="fav-h"><b>${esc(name)}</b>${codes}${crowdTop(e)}</div>${rows}</button>`;
   }
@@ -8940,7 +8954,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     // GTFS block is debug metadata; it is not the enthusiast train-slot number.
     const block = tm && tm.block ? String(tm.block) : "";
     const eta = t.atStation ? "Boarding now" : t.eta < 0.5 ? "Arriving" : `In about ${Math.max(1, Math.round(t.eta))} min`;
-    return `<div class="tsum" style="--c:var(--${x.line})">${trainSVG(t.dir)}<div><b>${t.atStation ? "Now at" : "Next stop"} ${esc(stop)}</b><br><span class="sub">${eta}${window.repWhen && repWhen(t) ? ` · ${repWhen(t)}` : ""}</span></div></div>
+    const pf = platOf(x.line, Math.round(t.next), t.dir);
+    return `<div class="tsum" style="--c:var(--${x.line})">${trainSVG(t.dir)}<div><b>${t.atStation ? "Now at" : "Next stop"} ${esc(stop)}${pf ? ` · platform ${esc(pf)}` : ""}</b><br><span class="sub">${eta}${window.repWhen && repWhen(t) ? ` · ${repWhen(t)}` : ""}</span></div></div>
       ${slot ? `<p class="hint" style="margin:0"><b>Train slot</b> ${esc(slot)} · run T${esc(slot.padStart(3, "0"))}</p>` : tripNo ? `<p class="hint" style="margin:0"><b>Trip no.</b> ${esc(tripNo)}</p>` : ""}
       ${slot && window.spotSetHTML ? spotSetHTML(x.line, slot, T.now.iso) : ""}
       ${slot && window.mrtOperatingHistoryHTML ? mrtOperatingHistoryHTML(x.line, slot, T.now.iso) : ""}
@@ -9327,7 +9342,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     return `<form class="sp-form" data-line="${esc(x.line)}" data-sb="${T && T.sb ? esc(T.to) : ""}" data-tk="${tk}" data-slot="${esc(slot)}" data-dir="${T ? esc(T.full) : ""}">
       ${slot || T ? `<p class="hint" style="margin:0">${slot ? `<b>Train slot ${esc(slot)}</b> (run T${esc(slot.padStart(3, "0"))}) · ` : ""}${x.line === "CG" ? "CGL" : esc(x.line)}${T ? ` · towards ${esc(T.full)}` : ""}</p>` : ""}
       <div class="sp-kind" role="radiogroup" aria-label="What happened"><label><input type="radio" name="spk" value="spot" checked><span>Spotted</span></label><label><input type="radio" name="spk" value="ride"><span>Rode</span></label></div>
-      <label class="rt-f"><span>Fleet / set</span><input name="set" maxlength="16" placeholder="${esc(fs.ph)}" pattern="${esc(fs.re)}" title="${esc(fs.tip)}" autocomplete="off" inputmode="text"></label>
+      <datalist id="spSetList">${[...new Set(spots.filter(s => s.set && (SET_GROUP[s.line] || s.line) === (SET_GROUP[x.line] || x.line)).map(s => s.set))].slice(0, 40).map(s => `<option value="${esc(s)}">`).join("")}</datalist>
+      <label class="rt-f"><span>Fleet / set</span><input name="set" list="spSetList" maxlength="16" placeholder="${esc(fs.ph)}" pattern="${esc(fs.re)}" title="${esc(fs.tip)}" autocomplete="off" inputmode="text"></label>
       <label class="rt-f"><span>Model</span><select name="model"><option value="" selected>Not sure</option>${ms.map(m => `<option>${esc(m)}</option>`).join("")}</select></label>
       <label class="rt-f"><span>Station</span><select name="st">${names.map(n => `<option${n === here ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
       <label class="rt-f"><span>Time</span><input name="time" type="time" value="${t}"></label>
@@ -9364,19 +9380,28 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
   });
 
   // the Spotter's log screen
-  const F = {line: "", model: "", kind: ""};
+  const F = {line: "", model: "", kind: "", set: ""};
+  /* Every set you've logged: how often, on which lines and slots, and when and where you last saw it. */
+  function setsHTML(){
+    const by = new Map();
+    for (const s of spots){ if (!s.set) continue; let g = by.get(s.set); if (!g) by.set(s.set, g = {set: s.set, n: 0, last: s, lines: new Set(), slots: new Set(), days: new Set()}); g.n++; g.lines.add(s.line); if (s.slot) g.slots.add(s.slot); g.days.add(new Date(s.at + 8 * 3600e3).toISOString().slice(0, 10)); }
+    if (!by.size) return "";
+    const rows = [...by.values()].sort((a, b) => b.last.at - a.last.at).map(g => `<button type="button" data-spset="${esc(g.set)}" class="${F.set === g.set ? "on" : ""}" style="--c:var(--${esc(g.last.line)})"><b>${esc(g.set)}</b><span>${g.n} sighting${g.n === 1 ? "" : "s"} · ${g.days.size} day${g.days.size === 1 ? "" : "s"}${g.slots.size ? ` · slot${g.slots.size === 1 ? "" : "s"} ${esc([...g.slots].slice(0, 4).join(", "))}` : ""}<br>last ${esc(new Date(g.last.at + 8 * 3600e3).toISOString().slice(5, 10).split("-").reverse().join("/"))} ${esc(hm24(g.last.at))} at ${esc(g.last.st)}</span></button>`).join("");
+    return `<div class="hm-h"><h2>Your sets</h2>${F.set ? `<button type="button" data-spset="">Show all</button>` : ""}</div><div class="sp-sets">${rows}</div>`;
+  }
   let spMsg = "";
   function spotHTML(){
     const got = BADGES.map(b => { const [n, of] = b.n(spots); return {...b, have: n, of, done: n >= of}; });
     const lines = [...new Set(spots.map(s => s.line))].filter(c => LINES[c]).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
     const models = [...new Set(spots.filter(s => !F.line || s.line === F.line).map(s => s.model).filter(Boolean))].sort();
-    const list = spots.filter(s => (!F.line || s.line === F.line) && (!F.model || s.model === F.model) && (!F.kind || s.kind === F.kind));
+    const list = spots.filter(s => (!F.line || s.line === F.line) && (!F.model || s.model === F.model) && (!F.kind || s.kind === F.kind) && (!F.set || s.set === F.set));
     const opt = (v, cur, label) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(label)}</option>`;
     return `<div class="sp-top"><button type="button" class="sp-back" data-spv="home" aria-label="Back to Home">‹</button><h2>Spotter's log</h2></div>
       <div class="sp-stats"><div><b>${spots.length}</b><span>sightings</span></div><div><b>${new Set(spots.map(s => s.line)).size}</b><span>lines</span></div><div><b>${new Set(spots.map(s => s.model).filter(Boolean)).size}</b><span>models</span></div><div><b>${got.filter(b => b.done).length}<small>/${got.length}</small></b><span>badges</span></div></div>
       <div class="hm-h"><h2>Badges</h2></div>
       <div class="sp-badges">${got.map(b => `<div class="sp-badge${b.done ? " on" : ""}" title="${esc(b.desc)}"><i>${esc(BADGE_IC[b.id] || "★")}</i><b>${esc(b.name)}</b><span>${b.done ? "Earned" : `${b.have}/${b.of}`} · ${esc(b.desc)}</span></div>`).join("")}</div>
-      <div class="hm-h"><h2>Sightings</h2><button type="button" data-spv="export"${spots.length ? "" : " disabled"}>Export</button></div>
+      ${setsHTML()}
+      <div class="hm-h"><h2>Sightings${F.set ? ` of ${esc(F.set)}` : ""}</h2><button type="button" data-spv="export"${spots.length ? "" : " disabled"}>Export</button></div>
       ${spMsg ? `<p class="sp-ok">${esc(spMsg)}</p>` : ""}
       ${spots.length ? `<div class="sp-filt">
         <select data-spf="line" aria-label="Line">${opt("", F.line, "All lines")}${lines.map(c => opt(c, F.line, lineFull(c))).join("")}</select>
@@ -9399,7 +9424,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     spMsg = ok ? "Copied your log to the clipboard." : "Couldn't copy here."; spotRender();
   }
   $("spotRoot").addEventListener("click", e => {
-    const v = e.target.closest("[data-spv]"), d = e.target.closest("[data-spdel]");
+    const v = e.target.closest("[data-spv]"), d = e.target.closest("[data-spdel]"), ss = e.target.closest("[data-spset]");
+    if (ss){ F.set = F.set === ss.dataset.spset ? "" : ss.dataset.spset; spMsg = ""; spotRender(); return; }
     if (v && v.dataset.spv === "home") showView("home");
     if (v && v.dataset.spv === "export") exportLog();
     if (d && confirm("Delete this sighting?")){ spots = spots.filter(s => s.id !== d.dataset.spdel); saveSpots(); tagIdx = null; spVer++; mDirty = true; spotRender(); hmSub(); }

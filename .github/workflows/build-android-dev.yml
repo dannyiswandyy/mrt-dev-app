@@ -14,6 +14,12 @@ on:
 permissions:
   contents: write
 
+# One build at a time: a push while a build runs waits for it (only the newest waiting build runs), so an older
+# build can never finish last and leave itself as the dev release.
+concurrency:
+  group: build-mrt-dev
+  cancel-in-progress: false
+
 env:
   CHANNEL: dev
 

@@ -22,4 +22,4 @@ jobs:
       - name: Check trains in service and headways
         env:
           MRT_INDEX: android/app/src/main/assets/index.html
-        run: node --test tests/timetable.test.mjs
+        run: node --test tests/timetable.test.mjs tests/day-simulation.test.mjs

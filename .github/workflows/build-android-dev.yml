@@ -6226,6 +6226,281 @@ jobs:
           path: osm-cache
           key: osm-buildings-v1-${{ github.run_id }}
 
+      - name: Build timetable intelligence layer
+        run: |
+          mkdir -p mrt-tracker-app/app/src/main/assets
+          if [ -f data/lta-timetable.json ]; then cp data/lta-timetable.json mrt-tracker-app/app/src/main/assets/intelligence-timetable.json; else echo '{}' > mrt-tracker-app/app/src/main/assets/intelligence-timetable.json; fi
+          cat > /tmp/intelligence.html <<'INTELLIGENCE_EOF'
+<script>
+(function () {
+  "use strict";
+  // MRT Timetable Intelligence Engine
+  // Combines timetable candidates, station sequence, live/inferred observations and
+  // high-confidence manual sightings. Manual sightings become temporary anchors so
+  // an inference cannot immediately overwrite what the user actually saw.
+  const KEY = "mrt-intelligence-v2";
+  const state = { anchors:{}, observations:[], journeys:[], stationGraph:{}, lastScan:0 };
+
+  const norm = s => String(s || "").trim().toUpperCase()
+    .replace(/[‐‑‒–—]/g,"-").replace(/\s+/g," ");
+  const stationNorm = s => norm(s).replace(/[^A-Z0-9]/g,"");
+  const idNorm = s => norm(s).replace(/\s+/g,"");
+  const now = () => Date.now();
+
+  function load() {
+    try {
+      const x = JSON.parse(localStorage.getItem(KEY) || "{}");
+      if (x && typeof x === "object") Object.assign(state, x);
+    } catch (_) {}
+    state.anchors = state.anchors || {};
+    state.observations = Array.isArray(state.observations) ? state.observations : [];
+    state.journeys = Array.isArray(state.journeys) ? state.journeys : [];
+  }
+  function save() {
+    try {
+      state.observations = state.observations.slice(-500);
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (_) {}
+  }
+
+  function minutes(t) {
+    if (typeof t === "number") return t;
+    const m = String(t || "").match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return null;
+    let h = +m[1], min = +m[2];
+    if (h < 24) return h * 60 + min;
+    return null;
+  }
+  function clockDistance(a,b) {
+    let d = Math.abs(a-b);
+    return Math.min(d, 1440-d);
+  }
+
+  // Generic GTFS/JSON timetable reader. It accepts the normal GTFS shape as well as
+  // compact arrays produced by the app's timetable builder.
+  function ingestTimetable(data) {
+    if (!data || typeof data !== "object") return;
+    const trips = Array.isArray(data.trips) ? data.trips : [];
+    const stops = Array.isArray(data.stop_times) ? data.stop_times : [];
+    const stopNames = {};
+    (Array.isArray(data.stops) ? data.stops : []).forEach(s => {
+      const id = s.stop_id || s.id || s.code;
+      if (id) stopNames[id] = s.stop_name || s.name || id;
+    });
+    const byTrip = {};
+    stops.forEach(s => {
+      const tid = s.trip_id || s.trip || s.journey_id;
+      if (!tid) return;
+      (byTrip[tid] ||= []).push({
+        seq:+(s.stop_sequence ?? s.sequence ?? 0),
+        id:s.stop_id || s.station_id || s.station || s.code,
+        name:s.stop_name || s.station_name || stopNames[s.stop_id] || s.name || s.station,
+        arr:minutes(s.arrival_time || s.arrival || s.time),
+        dep:minutes(s.departure_time || s.departure || s.time)
+      });
+    });
+    const out=[];
+    Object.keys(byTrip).forEach(tid=>{
+      const a=byTrip[tid].filter(x=>x.id||x.name).sort((x,y)=>x.seq-y.seq);
+      if(a.length<2)return;
+      const meta=trips.find(t=>(t.trip_id||t.id||t.journey_id)==tid)||{};
+      out.push({id:tid,line:meta.route_id||meta.line_id||meta.line||"",dir:meta.direction_id??meta.direction??"",stops:a});
+    });
+    if(!out.length && Array.isArray(data.journeys)) {
+      data.journeys.forEach((j,i)=>{
+        const a=(j.stops||j.stations||[]).map((s,k)=>({
+          seq:k,id:s.id||s.code||s.station,name:s.name||s.station_name,
+          arr:minutes(s.arrival||s.arrival_time||s.time),
+          dep:minutes(s.departure||s.departure_time||s.time)
+        }));
+        if(a.length>1) out.push({id:j.id||j.trip_id||("J"+i),line:j.line||j.route_id||"",dir:j.direction||j.direction_id||"",stops:a});
+      });
+    }
+    if(out.length) state.journeys=out;
+    buildGraph();
+    save();
+  }
+
+  function buildGraph() {
+    const g={};
+    state.journeys.forEach(j=>{
+      j.stops.forEach((s,i)=>{
+        const k=stationNorm(s.name||s.id);
+        if(!k)return;
+        (g[k] ||= {next:{},prev:{}}); 
+        if(j.stops[i+1]) {
+          const n=stationNorm(j.stops[i+1].name||j.stops[i+1].id);
+          if(n) g[k].next[n]=(g[k].next[n]||0)+1;
+        }
+        if(j.stops[i-1]) {
+          const p=stationNorm(j.stops[i-1].name||j.stops[i-1].id);
+          if(p) g[k].prev[p]=(g[k].prev[p]||0)+1;
+        }
+      });
+    });
+    state.stationGraph=g;
+  }
+
+  function scoreJourney(j, station, t, trainId) {
+    const s=stationNorm(station), candidates=[];
+    j.stops.forEach((x,i)=>{
+      if(stationNorm(x.name||x.id)!==s)return;
+      const scheduled=x.arr ?? x.dep;
+      let score=0;
+      if(scheduled!=null && t!=null) score += Math.max(0,100-clockDistance(scheduled,t)*4);
+      score += Math.min(25, i/Math.max(1,j.stops.length)*25);
+      if(trainId && norm(j.id)===norm(trainId)) score+=100;
+      candidates.push({score,j,i,stop:x});
+    });
+    return candidates;
+  }
+
+  function candidates(trainId,station,time) {
+    const t=minutes(time);
+    return state.journeys.flatMap(j=>scoreJourney(j,station,t,trainId))
+      .sort((a,b)=>b.score-a.score).slice(0,8);
+  }
+
+  function record(o) {
+    if(!o || !o.trainId || !o.station) return null;
+    const obs={
+      id:"O"+Date.now()+Math.random().toString(36).slice(2,7),
+      source:o.source||"manual", trainId:idNorm(o.trainId),
+      station:String(o.station), time:o.time||new Date().toISOString(),
+      ts:o.ts||now(), direction:o.direction||"", confidence:o.confidence??100
+    };
+    const cs=candidates(obs.trainId,obs.station,minutes(obs.time));
+    obs.candidates=cs.map(x=>({journey:x.j.id,line:x.j.line,index:x.i,score:x.score}));
+    state.observations.push(obs);
+    // Manual sightings are hard anchors for 30 minutes. A newer manual sighting replaces it.
+    if(obs.source==="manual" || obs.confidence>=95) {
+      state.anchors[obs.trainId]={station:obs.station,ts:obs.ts,until:obs.ts+30*60000,
+        confidence:Math.max(95,obs.confidence),direction:obs.direction||"",source:obs.source};
+    }
+    save();
+    return {observation:obs,candidates:cs};
+  }
+
+  function anchor(trainId) {
+    const a=state.anchors[idNorm(trainId)];
+    if(!a) return null;
+    if(a.until && a.until<now()){ delete state.anchors[idNorm(trainId)]; save(); return null; }
+    return a;
+  }
+
+  function acceptInference(trainId,station,source,confidence,ts) {
+    const a=anchor(trainId);
+    if(a && a.confidence>=95 && a.ts>=((ts||now())-30*60000)) {
+      return {station:a.station,source:a.source,confidence:a.confidence,anchored:true};
+    }
+    return {station,source:source||"inferred",confidence:confidence||0,anchored:false};
+  }
+
+  // Reject physically implausible station jumps when two observations are close in time.
+  function plausible(trainId,station,ts) {
+    const id=idNorm(trainId), prev=state.observations.filter(o=>o.trainId===id)
+      .sort((a,b)=>b.ts-a.ts)[0];
+    if(!prev) return {ok:true,penalty:0};
+    const dt=Math.abs((ts||now())-prev.ts)/60000;
+    if(dt>20)return {ok:true,penalty:0};
+    const g=state.stationGraph[stationNorm(prev.station)];
+    if(!g)return {ok:true,penalty:0};
+    const target=stationNorm(station);
+    if(g.next[target] || g.prev[target]) return {ok:true,penalty:0};
+    return {ok:false,penalty:70};
+  }
+
+  // Public API for the existing spotting UI or future code.
+  window.mrtReportSighting=function(trainId,station,time,direction){
+    return record({trainId,station,time,direction,source:"manual",confidence:100});
+  };
+  window.mrtGetTrainTruth=function(trainId){
+    const a=anchor(trainId);
+    if(a)return {station:a.station,confidence:a.confidence,source:"manual",anchored:true,ageMs:now()-a.ts};
+    const o=state.observations.filter(x=>x.trainId===idNorm(trainId)).sort((a,b)=>b.ts-a.ts)[0];
+    return o ? {station:o.station,confidence:o.confidence,source:o.source,anchored:false,ageMs:now()-o.ts} : null;
+  };
+  window.mrtScoreSighting=function(trainId,station,time){ return candidates(trainId,station,minutes(time)); };
+  window.mrtIntelligence={state,record,anchor,acceptInference,plausible,ingestTimetable};
+
+  function discoverLocalSightingLogs(){
+    // Learn from existing app storage without changing its schema.
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i)||"";
+      if(!/(spot|sight|train.*log|log.*train)/i.test(k))continue;
+      try{
+        const v=JSON.parse(localStorage.getItem(k));
+        const arr=Array.isArray(v)?v:(v&&Array.isArray(v.items)?v.items:null);
+        if(!arr)return;
+        arr.slice(-50).forEach(x=>{
+          const train=x.trainId||x.train||x.r||x.run||x.set;
+          const station=x.station||x.stationName||x.stn;
+          const tm=x.time||x.timestamp||x.ts||x.loggedAt;
+          if(train&&station&&!state.observations.some(o=>o.trainId===idNorm(train)&&stationNorm(o.station)===stationNorm(station)&&String(o.time)===String(tm))){
+            record({trainId:train,station,time:tm,source:"manual",confidence:100,ts:typeof x.ts==="number"?x.ts:Date.parse(x.timestamp||x.loggedAt||"")||now()});
+          }
+        });
+      }catch(_){}
+    }
+  }
+
+  function visualGuard(){
+    // Keep a recent manual anchor visible even if a lower-confidence inference redraws the card.
+    Object.keys(state.anchors).forEach(id=>{
+      const a=anchor(id); if(!a)return;
+      const nodes=[...document.querySelectorAll("body *")].filter(n=>n.children.length===0);
+      const hits=nodes.filter(n=>idNorm(n.textContent||"").includes(id));
+      hits.forEach(n=>{
+        let p=n.parentElement;
+        for(let depth=0;depth<5 && p;depth++,p=p.parentElement){
+          const t=(p.textContent||"");
+          if(t.length>20 && /(depart|arriv|heading|next|station|platform)/i.test(t)){
+            if(!p.querySelector(".mrt-intel-anchor")){
+              const badge=document.createElement("span");
+              badge.className="mrt-intel-anchor";
+              badge.textContent="  • spotted "+a.station;
+              badge.title="Manual sighting anchor — "+Math.round((now()-a.ts)/60000)+" min old";
+              badge.style.cssText="font-size:11px;font-weight:700;opacity:.9;margin-left:4px";
+              p.appendChild(badge);
+            }
+            break;
+          }
+        }
+      });
+    });
+  }
+
+  load();
+  discoverLocalSightingLogs();
+
+  // Watch storage updates made by the existing app.
+  window.addEventListener("storage",()=>{discoverLocalSightingLogs();visualGuard();});
+  setInterval(()=>{discoverLocalSightingLogs();visualGuard();},2500);
+
+  // Load a packed timetable when the build provides one.
+  fetch("intelligence-timetable.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
+    .then(ingestTimetable).catch(()=>{});
+
+  // Also expose a compact debug snapshot for Dev mode.
+  window.mrtIntelligenceSnapshot=function(){
+    return {anchors:Object.keys(state.anchors).map(k=>[k,state.anchors[k]]),
+      observations:state.observations.slice(-20),journeys:state.journeys.length,
+      graphStations:Object.keys(state.stationGraph).length};
+  };
+})();
+</script>
+INTELLIGENCE_EOF
+          python3 - <<'PY'
+from pathlib import Path
+p=Path('mrt-tracker-app/app/src/main/assets/index.html')
+h=p.read_text(encoding='utf-8')
+s=Path('/tmp/intelligence.html').read_text(encoding='utf-8')
+if 'MRT Timetable Intelligence Engine' not in h:
+    pos=h.lower().rfind('</body>')
+    h=h[:pos]+s+'\n'+h[pos:] if pos>=0 else h+'\n'+s
+    p.write_text(h,encoding='utf-8')
+PY
+
       - name: Build the app
         env:
           # Claude API key for the Ask tab (optional). Without it, the Ask tab gives built-in answers.

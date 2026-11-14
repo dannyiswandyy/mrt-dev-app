@@ -248,7 +248,9 @@ jobs:
           mkdir -p 'mrt-tracker-app/app/src/main/assets'
           # mrt-tracker-app/app/src/main/assets/index.html is stored compressed (gzip, then base64) to keep this file under GitHub's 500 KB limit
           base64 -d data/mrt-dev-page.b64 | gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'
-          # Add the newly discovered Woodlands webcam as an additional Live Cam source.
+          # Add the newly discovered Woodlands webcam as a second, visible Live Cam card.
+          # The previous version used a fixed floating button, which can sit behind the mobile
+          # bottom navigation. Put the new camera directly into the Live Cam area instead.
           python3 - <<'PY'
           from pathlib import Path
           p = Path('mrt-tracker-app/app/src/main/assets/index.html')
@@ -257,19 +259,50 @@ jobs:
           (() => {
             const VIDEO = "kJItg6lV6v8";
             const install = () => {
-              if (document.getElementById("mrtWoodlandsCam")) return;
+              if (document.getElementById("mrtWoodlandsCamCard")) return;
               const style = document.createElement("style");
               style.id = "mrtWoodlandsCamStyle";
-              style.textContent = ".mrt-woodlands-cam{position:fixed;right:14px;bottom:88px;z-index:99990;background:var(--card,#111827);color:var(--text,#fff);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:10px 13px;font:600 13px system-ui;box-shadow:0 8px 30px #0008}.mrt-woodlands-cam:hover{filter:brightness(1.15)}.mrt-woodlands-modal{position:fixed;inset:0;z-index:100000;background:#000d;display:flex;align-items:center;justify-content:center;padding:18px}.mrt-woodlands-box{width:min(100%,900px);background:#050505;border-radius:18px;overflow:hidden;box-shadow:0 20px 70px #000}.mrt-woodlands-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:#fff;font:600 14px system-ui}.mrt-woodlands-close{border:0;background:#ffffff18;color:#fff;border-radius:10px;padding:7px 10px;font-size:16px}.mrt-woodlands-frame{display:block;width:100%;aspect-ratio:16/9;border:0}";
+              style.textContent = ".mrt-livecam-extra{margin:12px 0 18px;padding:0;background:var(--card,#11161d);border:1px solid rgba(255,255,255,.12);border-radius:20px;overflow:hidden;box-shadow:0 8px 28px #0004}.mrt-livecam-extra-head{padding:16px 18px 12px}.mrt-livecam-extra-title{font:800 24px/1.15 system-ui;color:#fff}.mrt-livecam-extra-sub{margin-top:5px;font:500 15px/1.35 system-ui;color:#9ca7b5}.mrt-livecam-extra-badge{float:right;margin-top:2px;padding:7px 10px;border-radius:10px;background:#ef4444;color:#fff;font:700 12px system-ui}.mrt-livecam-extra-frame{display:block;width:100%;aspect-ratio:16/9;border:0;background:#000}.mrt-livecam-extra-actions{display:flex;gap:8px;flex-wrap:wrap;padding:12px 14px 14px}.mrt-livecam-extra-actions a,.mrt-livecam-extra-actions button{border:0;border-radius:12px;padding:10px 13px;background:#1b2330;color:#e7edf5;text-decoration:none;font:650 13px system-ui}.mrt-livecam-extra-actions a:active,.mrt-livecam-extra-actions button:active{filter:brightness(1.2)}";
               document.head.appendChild(style);
-              const b=document.createElement("button"); b.id="mrtWoodlandsCam"; b.className="mrt-woodlands-cam"; b.textContent="📹 Woodlands Cam";
-              b.onclick=()=>{const m=document.createElement("div");m.className="mrt-woodlands-modal";m.innerHTML='<div class="mrt-woodlands-box"><div class="mrt-woodlands-head"><span>Woodlands Cam · New angle</span><button class="mrt-woodlands-close" aria-label="Close">×</button></div><iframe class="mrt-woodlands-frame" src="https://www.youtube.com/embed/'+VIDEO+'?autoplay=1&mute=1&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>';m.querySelector(".mrt-woodlands-close").onclick=()=>m.remove();m.onclick=e=>{if(e.target===m)m.remove()};document.body.appendChild(m)};
-              document.body.appendChild(b);
+
+              const card = document.createElement("section");
+              card.id = "mrtWoodlandsCamCard";
+              card.className = "mrt-livecam-extra";
+              card.innerHTML =
+                '<div class="mrt-livecam-extra-head"><span class="mrt-livecam-extra-badge">● Live</span>' +
+                '<div class="mrt-livecam-extra-title">Woodlands Cam</div>' +
+                '<div class="mrt-livecam-extra-sub">RailCam Singapore · New live angle</div></div>' +
+                '<iframe class="mrt-livecam-extra-frame" src="https://www.youtube.com/embed/'+VIDEO+'?autoplay=0&mute=1&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Woodlands live camera"></iframe>' +
+                '<div class="mrt-livecam-extra-actions"><a href="https://www.youtube.com/live/'+VIDEO+'" target="_blank" rel="noopener">▶ Open in YouTube</a><button type="button" id="mrtWoodlandsRefresh">↻ Refresh</button></div>';
+
+              const insert = () => {
+                const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"));
+                const trainSpot = headings.find(el => /TRAIN\\s+SPOTTING/i.test(el.textContent || ""));
+                if (trainSpot) {
+                  const host = trainSpot.closest("section,article,.card,[class*='card'],div") || trainSpot;
+                  host.parentNode.insertBefore(card, host);
+                  return true;
+                }
+                const live = headings.find(el => /LIVE\\s+CAM/i.test(el.textContent || ""));
+                if (live && live.parentNode) {
+                  live.parentNode.insertAdjacentElement("afterend", card);
+                  return true;
+                }
+                return false;
+              };
+
+              if (!insert()) document.body.appendChild(card);
+              const refresh = document.getElementById("mrtWoodlandsRefresh");
+              if (refresh) refresh.onclick = () => {
+                const frame = card.querySelector("iframe");
+                if (frame) frame.src = frame.src;
+              };
             };
-            if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",install,{once:true}); else install();
+            if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, {once:true});
+            else install();
           })();
           </script>'''
-          if 'id="mrtWoodlandsCam"' not in h:
+          if 'id="mrtWoodlandsCamCard"' not in h:
               h = h.replace('</body>', patch + '\n</body>')
               p.write_text(h, encoding='utf-8')
           PY

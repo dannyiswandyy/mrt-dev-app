@@ -2996,7 +2996,81 @@ const MSTN = (() => {
   }
   return list;
 })();
-const MDRAW = ["BP", "SE", "SW", "PE", "PW", "SEN", "CG", "EWL", "NSL", "NEL", "CCL", "DTL", "TEL", "RTS"];   // LRT underneath\n// Experimental official URA Master Plan 2025 rail alignment overlay.\nlet URA_RAIL = [];\nfetch("ura-rail-geometry.geojson").then(r => r.json()).then(g => {\n  URA_RAIL = (g.features || []).map(f => f.geometry?.coordinates || []).filter(p => p.length >= 2);\n  mDirty = true;\n}).catch(() => {});\nfunction drawURARail(ctx){\n  if (!URA_RAIL.length) return;\n  ctx.save();\n  ctx.strokeStyle = "rgba(255,255,255,0.18)";\n  ctx.lineWidth = Math.max(1, Math.min(2.2, 1.15 * fitScale / 0.01));\n  ctx.setLineDash([4,5]); ctx.lineCap = "round"; ctx.lineJoin = "round";\n  const ox=103.819, oy=1.352, kx=111320*Math.cos(oy*Math.PI/180), ky=111320;\n  for (const line of URA_RAIL){\n    ctx.beginPath();\n    for(let i=0;i<line.length;i++){ const q=line[i], x=(q[0]-ox)*kx, y=(oy-q[1])*ky; if(i===0) ctx.moveTo(sx(x),sy(y)); else ctx.lineTo(sx(x),sy(y)); }\n    ctx.stroke();\n  }\n  ctx.restore();\n}\n
+const MDRAW = ["BP", "SE", "SW", "PE", "PW", "SEN", "CG", "EWL", "NSL", "NEL", "CCL", "DTL", "TEL", "RTS"];   // LRT underneath
+
+/*
+ * Ground-alignment correction:
+ * SG Rail Data is deliberately simplified/smoothed, so its coloured lines can visibly
+ * miss the satellite imagery.  The build also packs the current URA Master Plan MRT
+ * rail layer.  We use that layer as a visual correction, matched to the nearest existing
+ * station-to-station segment.  The original geometry remains the fallback, so this can
+ * never blank the map if the URA asset is unavailable.
+ */
+let URA_RAIL = [];
+let URA_MATCHED = [];
+const URA_OX = 103.819, URA_OY = 1.352;
+const URA_KX = 111320 * Math.cos(URA_OY * Math.PI / 180), URA_KY = 111320;
+function uraXY(q){ return [(q[0] - URA_OX) * URA_KX, (URA_OY - q[1]) * URA_KY]; }
+function pointSegD2(px, py, ax, ay, bx, by){
+  const dx = bx - ax, dy = by - ay, dd = dx*dx + dy*dy || 1;
+  const t = Math.max(0, Math.min(1, ((px-ax)*dx + (py-ay)*dy) / dd));
+  const x = ax + dx*t, y = ay + dy*t;
+  return (px-x)*(px-x) + (py-y)*(py-y);
+}
+function buildURAMatches(){
+  URA_MATCHED = [];
+  if (!URA_RAIL.length || !MSEG) return;
+  const refs = [];
+  for (const c of MDRAW){
+    const segs = MAP.paths[c] || [];
+    for (let i = 0; i < segs.length; i++){
+      const p = segs[i];
+      if (!p || p.length < 4) continue;
+      refs.push({c, i, ax:p[0], ay:p[1], bx:p[p.length-2], by:p[p.length-1]});
+    }
+  }
+  for (const raw of URA_RAIL){
+    const pts = raw.map(uraXY);
+    if (pts.length < 2) continue;
+    const samples = [pts[0], pts[(pts.length/2)|0], pts[pts.length-1]];
+    let best = null;
+    for (const ref of refs){
+      let d = 0;
+      for (const p of samples) d += pointSegD2(p[0], p[1], ref.ax, ref.ay, ref.bx, ref.by);
+      if (!best || d < best.d) best = {ref, d};
+    }
+    // Do not paint future/other rail corridors onto an existing MRT line.
+    if (best && best.d <= 210*210*3) URA_MATCHED.push({pts, c:best.ref.c, d:best.d});
+  }
+}
+fetch("ura-rail-geometry.geojson").then(r => r.json()).then(g => {
+  URA_RAIL = (g.features || []).map(f => f.geometry?.coordinates || []).filter(p => p.length >= 2);
+  buildURAMatches();
+  mDirty = true;
+}).catch(() => {});
+
+function drawURARail(ctx){
+  if (!URA_MATCHED.length) return;
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // Draw the official geometry as a thin coloured correction over the simplified route.
+  const w = Math.max(1.4, Math.min(3.4, 0.72 * fitScale / 0.01));
+  for (const g of URA_MATCHED){
+    ctx.strokeStyle = MC[g.c] || MC.track;
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = w;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (let i = 0; i < g.pts.length; i++){
+      const p = g.pts[i];
+      if (i === 0) ctx.moveTo(sx(p[0]), sy(p[1]));
+      else ctx.lineTo(sx(p[0]), sy(p[1]));
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 
 const mcv = $("mapCv"), mwrap = $("mapWrap");
 const mctx = mcv.getContext("2d");

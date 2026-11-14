@@ -12,6 +12,37 @@ The Android project is in `android/` (the app page is `android/app/src/main/asse
 - **Google Routes timing compare** — compares the next LTA timetable departure with Google Maps transit routing (Routes API).
 - **Orange app icon** — the same train-front icon as MRT Tracker, on an orange (#E86E00) background so the dev app is easy to tell apart.
 
+## Current capabilities
+
+The dev app now combines the planned timetable with live LTA GTFS-Realtime data and local operating intelligence. The timetable remains the base schedule; realtime data is applied as a separate live overlay.
+
+- **LTA GTFS timetable** — packed train schedules, service calendars, holiday handling, train trips and LTA trip IDs.
+- **Automatic timetable refresh** — the app can check for newer LTA timetable data in-app rather than relying only on a rebuilt APK.
+- **Live Trip Updates** — live delays, per-stop arrival/departure changes, skipped stops and cancelled trips where supplied by LTA.
+- **Service Alerts** — active LTA disruption alerts are surfaced without overwriting the underlying timetable.
+- **Train position / ETA intelligence** — combines timetable timing with live delay information to estimate current train positions and arrivals.
+- **Train slot intelligence** — extracts the enthusiast-style slot/run number from LTA trip IDs and carries it through live train data.
+- **End-of-line turnbacks** — trains can remain represented at terminals and continue into their next trip instead of disappearing prematurely.
+- **Depot-transfer intelligence** — conservatively identifies likely depot departures/returns from timetable continuity and depot-adjacent stations. These are explicitly inferred, not an official engineering feed.
+- **Engineering intelligence** — identifies likely after-service withdrawals and pre-service launches around the normal engineering window. It does not claim to know actual track-work movements unless supplied by an official feed.
+- **Operating history** — locally records observed train movements during the day, allowing the app to build a history of a slot's stations, runs and terminal turnbacks.
+- **Train spotting** — users can associate observed fleet/set numbers with train slots locally. This is independent app spotting and does not scrape or import SGTrains data.
+- **Last-train intelligence** — first/last-call and last-train behaviour is represented in the timetable UI.
+- **LiveCam / spotting tools** — supports the app's own spotting workflow and diagnostics.
+- **Dev simulation** — fake clock, crowds, disruptions and weather remain available for testing.
+
+### Adaptive UI and device optimisation
+
+The UI is maintained as a responsive web layer inside the Android app so the same interface can adapt across different screen sizes and form factors.
+
+- Small Android phones and iPhones: touch-friendly controls, safe-area handling, dynamic viewport sizing and compact layouts.
+- iPhone/iOS WebView-oriented handling: notch/home-indicator safe areas, keyboard/visual-viewport changes and orientation changes.
+- iPad and Android tablets: wider layouts and landscape split-pane behaviour.
+- Foldables and split-screen devices: reduced overflow and flexible train/station cards.
+- Desktop/wide screens: larger map and two-column layouts where space allows.
+- Large scrolling surfaces are isolated where practical to reduce unnecessary rendering work.
+
+The native packaging remains Android-first. iPhone/iPad optimisation here refers to the responsive UI architecture and WebView/browser compatibility of the app's front-end; it does **not** mean that this repository currently produces an iOS `.ipa`.
 ## Train counts and timetable estimates
 
 When LTA's timetable isn't available for a line, the app estimates trains from how many are out at each time of day. These counts come from the operators' **train duty rosters**. Each run is counted by its duty: FD = full day (morning to 8pm), HD = half day (to 2pm), (AM) = 7–9.30am peak, (PM) = 5–8pm peak, (OP) = between the peaks, and LN = late night. Depot transfers aren't counted.

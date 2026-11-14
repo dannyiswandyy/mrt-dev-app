@@ -2079,7 +2079,7 @@ function ttExtend(code, iso, list, ext){
     const last = pass[pass.length - 1].t; if (last >= target - 30) continue;
     const longest = Math.max(...pass.map(x => x.len)), model = pass.filter(x => x.len === longest).pop();
     const gap = clampN(last - pass[pass.length - 2].t, 180, 600);
-    for (let t = target; t > last + gap * 0.5; t -= gap) add.push({s: t - model.r.p.dep[model.k], p: model.r.p, pi: model.r.pi});
+    for (let t = target; t > last + gap * 0.5; t -= gap) add.push({s: t - model.r.p.dep[model.k], p: model.r.p, pi: model.r.pi, tid: model.r.tid});
   }
   return add.length ? list.concat(add).sort((a, b) => a.s - b.s) : list;
 }

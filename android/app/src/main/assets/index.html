@@ -1458,7 +1458,7 @@ const LINES = {
     ["CG","Tanah Merah"],["CG1","Expo"],["CG2","Changi Airport"]]},
   NEL:{name:"North East Line",peak:2.5,off:4.5,late:7,run:1.9,dwell:0.5,trains:NEL_TRAINS,stations:[
     ["NE1","HarbourFront"],["NE3","Outram Park"],["NE4","Chinatown"],["NE5","Clarke Quay"],["NE6","Dhoby Ghaut"],["NE7","Little India"],["NE8","Farrer Park"],["NE9","Boon Keng"],["NE10","Potong Pasir"],["NE11","Woodleigh"],["NE12","Serangoon"],["NE13","Kovan"],["NE14","Hougang"],["NE15","Buangkok"],["NE16","Sengkang"],["NE17","Punggol"],["NE18","Punggol Coast"]]},
-  CCL:{name:"Circle Line",peak:3,off:5,late:7,run:1.8,dwell:0.5,trains:CCL_TRAINS,stations:[
+  CCL:{name:"Circle Line",bound:["Anticlockwise","Clockwise"],peak:3,off:5,late:7,run:1.8,dwell:0.5,trains:CCL_TRAINS,stations:[
     ["CC1","Dhoby Ghaut"],["CC2","Bras Basah"],["CC3","Esplanade"],["CC4","Promenade"],["CC5","Nicoll Highway"],["CC6","Stadium"],["CC7","Mountbatten"],["CC8","Dakota"],["CC9","Paya Lebar"],["CC10","MacPherson"],["CC11","Tai Seng"],["CC12","Bartley"],["CC13","Serangoon"],["CC14","Lorong Chuan"],["CC15","Bishan"],["CC16","Marymount"],["CC17","Caldecott"],["CC19","Botanic Gardens"],["CC20","Farrer Road"],["CC21","Holland Village"],["CC22","Buona Vista"],["CC23","one-north"],["CC24","Kent Ridge"],["CC25","Haw Par Villa"],["CC26","Pasir Panjang"],["CC27","Labrador Park"],["CC28","Telok Blangah"],["CC29","HarbourFront"],["CC30","Keppel"],["CC31","Cantonment"],["CC32","Prince Edward Road"],["CC33","Marina Bay"],["CC34","Bayfront"]]},
   DTL:{name:"Downtown Line",peak:2.5,off:4.5,late:7,run:1.6,dwell:0.45,stations:[
     ["DT1","Bukit Panjang"],["DT2","Cashew"],["DT3","Hillview"],["DT4","Hume"],["DT5","Beauty World"],["DT6","King Albert Park"],["DT7","Sixth Avenue"],["DT8","Tan Kah Kee"],["DT9","Botanic Gardens"],["DT10","Stevens"],["DT11","Newton"],["DT12","Little India"],["DT13","Rochor"],["DT14","Bugis"],["DT15","Promenade"],["DT16","Bayfront"],["DT17","Downtown"],["DT18","Telok Ayer"],["DT19","Chinatown"],["DT20","Fort Canning"],["DT21","Bencoolen"],["DT22","Jalan Besar"],["DT23","Bendemeer"],["DT24","Geylang Bahru"],["DT25","Mattar"],["DT26","MacPherson"],["DT27","Ubi"],["DT28","Kaki Bukit"],["DT29","Bedok North"],["DT30","Bedok Reservoir"],["DT31","Tampines West"],["DT32","Tampines"],["DT33","Tampines East"],["DT34","Upper Changi"],["DT35","Expo"],["DT36","Xilin",OPEN_TEL5],["DT37","Sungei Bedok",OPEN_TEL5]]},
@@ -1522,7 +1522,17 @@ function renderFleet(c){
 }
 const ORDER = ["NSL","EWL","NEL","CCL","DTL","TEL","CG","BP","SE","SW","PE","PW","SEN","RTS"];
 /* Where a train in this direction is headed, e.g. "Marina South Pier" or "Sengkang via Compassvale". */
+/* The Circle Line is signed by direction round the loop, not by an end station (LTA's wording since the
+   loop closed in July 2026): stations in code order (Dhoby Ghaut → Stadium → Bishan → HarbourFront → Keppel →
+   Bayfront) run anticlockwise, the other way clockwise. A train that ends early "ends at" that station. */
+const BOUND_RE = /^(Anti)?clockwise\b/i;
+const toW = s => BOUND_RE.test(String(s)) ? String(s) : "To " + s;           // "To Bishan", or just "Clockwise"
+const toWl = s => BOUND_RE.test(String(s)) ? String(s).toLowerCase() : "to " + s;
+const towardsW = s => BOUND_RE.test(String(s)) ? String(s).split(" · ")[0].toLowerCase() : "towards " + s;
+const trainToW = s => { if (!BOUND_RE.test(String(s))) return "Train to " + s; const [b, e] = String(s).split(" · "); return `${b} train${e ? " · " + e : ""}`; };
+const endsName = (L, dir, act, to) => L.bound ? `${L.bound[dir]} · ends at ${act[to][1]}` : act[to][1];
 function dest(L, dir, act){
+  if (L.bound) return L.bound[dir];
   if (L.loop) return `${act[0][1]} via ${dir ? act[act.length-2][1] : act[1][1]}`;
   if (L.via0 && !dir) return `${act[act.length-1][1]} via ${L.via0}`;
   return dir ? act[0][1] : act[act.length-1][1];
@@ -1830,8 +1840,8 @@ function runsFor(code, day, dir = 0){
 }
 /* A train's destination: the line's usual end, or for a special-bound train the station it ends at. */
 const isShortTo = (L, dir, act, to) => to != null && to >= 0 && to < act.length && !L.loop && !L.lrt && !L.shuttle &&
-  to !== (dir ? 0 : act.length - 1) && act[to][1] !== dest(L, dir, act);
-const destOf = (L, dir, act, to) => isShortTo(L, dir, act, to) ? act[to][1] : dest(L, dir, act);
+  (L.bound ? !(dir === 0 && to === act.length - 1) : to !== (dir ? 0 : act.length - 1) && act[to][1] !== dest(L, dir, act));   // Circle Line: Dhoby Ghaut is an end; Bayfront just carries on round
+const destOf = (L, dir, act, to) => isShortTo(L, dir, act, to) ? endsName(L, dir, act, to) : dest(L, dir, act);
 /* Minutes NSL trains are running behind (+) or ahead (-) of the schedule, as seen on the Live cam
    (train spotting; 0 when it's off). Set up by the spotting module further down. */
 const camAdj = (code, dir) => { try { return code === "NSL" && window.spotOffset ? window.spotOffset(dir) : 0; } catch(e){ return 0; } };
@@ -2079,7 +2089,7 @@ function ttNext(list, s, dir, now, count, reach){
   for (const r of list){
     const p = r.p; if ((p.d > 0 ? 0 : 1) !== dir) continue;
     const k = (s - p.f) * p.d;
-    if (k < 0 || k >= p.arr.length - 1) continue;
+    if (k < 0 || k > p.arr.length - 1 || (k === p.arr.length - 1 && !(LINES[list.code].bound && p.to === -1))) continue;   // a Circle Line loop run goes on round from its last stop here
     if (reach != null && (reach - p.f) * p.d > p.arr.length - 1) continue;
     const t = r.s + p.arr[k] + (mv ? (mv.get(`${list.code}t${r.s}p${r.pi}`) || 0) * 60 : 0);
     if (t >= sec - 10) res.push({m: (t - sec) / 60, to: p.to});
@@ -2169,8 +2179,8 @@ function buildBoard(){
   $("board").style.setProperty("--c", color);
   renderFleet(current);
   const actList = act ? L.stations.slice(0, act) : L.stations;
-  $("lgA").textContent = "↓ To " + dest(L, 0, actList);
-  $("lgB").textContent = "To " + dest(L, 1, actList) + " ↑";
+  $("lgA").textContent = "↓ " + toW(dest(L, 0, actList));
+  $("lgB").textContent = toW(dest(L, 1, actList)) + " ↑";
   const rows = L.stations.map((s, i) => {
     const others = (byName[s[1]] || []).filter(x => x[0] !== current);
     const fut = i >= act;
@@ -2269,17 +2279,17 @@ function tick(){
       // like a platform display: the next trains grouped by where they're going, special-bound ones on their own row
       let anyShort = false;
       const line = (d, arr) => {
-        if (!arr.length) return `<div><span>To ${dest(L, d, act)}</span><span class="t">${arr.cut ? "No service · disruption" : "No more trains"}</span></div>`;
+        if (!arr.length) return `<div><span>${toW(dest(L, d, act))}</span><span class="t">${arr.cut ? "No service · disruption" : "No more trains"}</span></div>`;
         const groups = [];
         arr.forEach((m, k) => {
-          const sb = isShortTo(L, d, act, arr.to[k]), name = sb ? act[arr.to[k]][1] : dest(L, d, act);
+          const sb = isShortTo(L, d, act, arr.to[k]), name = sb ? endsName(L, d, act, arr.to[k]) : dest(L, d, act);
           let g = groups.find(x => x.name === name); if (!g) groups.push(g = {name, sb, ms: []});
           g.ms.push(m); if (sb) anyShort = true;
         });
-        return groups.map(g => `<div${g.sb ? ' class="sbrow"' : ""}><span>To ${esc(g.name)}${g.sb ? `<span class="sb">special-bound</span>` : ""}</span><span class="t">${g.ms.map(fmt).join(" · ")}</span></div>`).join("");
+        return groups.map(g => `<div${g.sb ? ' class="sbrow"' : ""}><span>${esc(toW(g.name))}${g.sb && !L.bound ? `<span class="sb">special-bound</span>` : ""}</span><span class="t">${g.ms.map(fmt).join(" · ")}</span></div>`).join("");
       };
       const rows = (i < n-1 ? line(0, a) : "") + (i > 0 ? line(1, b) : "");
-      setHTML(dt, rows + (anyShort ? `<p class="sbnote">Special-bound trains end at that station instead of going all the way.</p>` : "") +
+      setHTML(dt, rows + (anyShort && !L.bound ? `<p class="sbnote">Special-bound trains end at that station instead of going all the way.</p>` : "") +
         `<div class="dact"><button type="button" class="hlink" data-hstation="${esc(L.stations[i][1])}">Station history ›</button></div>`);
     } else dt.hidden = true;
   }
@@ -2310,7 +2320,7 @@ function tick(){
   const terminus = tr => destOf(L, tr.dir, act, tr.to);
   for (const tr of running){
     const el = trainEls[tr.id], stop = act[tr.next][1];
-    el.setAttribute("aria-label", `Train to ${terminus(tr)}${isShortTo(L, tr.dir, act, tr.to) ? " (special-bound)" : ""}, ${tr.atStation ? "at" : "next stop"} ${stop}`);
+    el.setAttribute("aria-label", `${trainToW(terminus(tr))}${isShortTo(L, tr.dir, act, tr.to) && !L.bound ? " (special-bound)" : ""}, ${tr.atStation ? "at" : "next stop"} ${stop}`);
     el.classList.toggle("sel", tr.id === selTrain);
     el.classList.toggle("seen", !!(window.repSeen && repSeen(tr.id)));
   }
@@ -2323,7 +2333,7 @@ function tick(){
     const where = s.atStation ? `Now at <b>${stop}</b>` : `Next stop <b>${stop}</b>`;
     setHTML($("trainInfo"), `<div class="tinfo">
       <div>${trainSVG(s.dir)}</div>
-      <div>Train to <b>${terminus(s)}</b>${isShortTo(L, s.dir, act, s.to) ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(s) : ""}<br>${where}${window.repWhen && repWhen(s) ? `<br><small class="muted">${repWhen(s)}</small>` : ""}</div>
+      <div><b>${esc(trainToW(terminus(s)))}</b>${isShortTo(L, s.dir, act, s.to) && !L.bound ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(s) : ""}<br>${where}${window.repWhen && repWhen(s) ? `<br><small class="muted">${repWhen(s)}</small>` : ""}</div>
       <span class="eta">${s.atStation ? "Boarding" : s.eta < 0.5 ? "Arriving" : "~" + Math.max(1, Math.round(s.eta)) + " min"}</span>
       <button type="button" aria-label="Close" id="tclose">×</button></div>`);
     $("tclose").onclick = () => { selTrain = null; tick(); };
@@ -3564,7 +3574,7 @@ function mapInfoHTML(){
     const L = LINES[mSel.line], t = trainsOn(mSel.line, now).find(x => x.id === mSel.id);
     if (!t){ mSel = null; return mapInfoHTML(); }
     const act = activeStations(L, now.iso), stop = act[t.next][1];
-    return `<div class="mi-h"><span class="code" style="background:var(--${mSel.line})">${mSel.line === "CG" ? "CGL" : mSel.line}</span><b>Train to ${esc(destOf(L, t.dir, act, t.to))}</b>${isShortTo(L, t.dir, act, t.to) ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(t) : ""}<button class="mi-x" type="button" data-act="close" aria-label="Close">×</button></div>
+    return `<div class="mi-h"><span class="code" style="background:var(--${mSel.line})">${mSel.line === "CG" ? "CGL" : mSel.line}</span><b>${esc(trainToW(destOf(L, t.dir, act, t.to)))}</b>${!L.bound && isShortTo(L, t.dir, act, t.to) ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(t) : ""}<button class="mi-x" type="button" data-act="close" aria-label="Close">×</button></div>
       <div class="mi-row"><span>${t.atStation ? `Now at <b>${esc(stop)}</b>` : `Next stop <b>${esc(stop)}</b>`}</span><span class="mi-t">${t.atStation ? "Boarding" : t.eta < 0.5 ? "Arriving" : "~" + Math.max(1, Math.round(t.eta)) + " min"}</span></div>${window.repWhen && repWhen(t) ? `<div class="mi-row"><span>${repWhen(t)}</span></div>` : ""}
       <div class="mi-act"><button class="btn ghost" type="button" data-act="line">Open on Line Board</button></div>`;
   }
@@ -3578,10 +3588,10 @@ function mapInfoHTML(){
     if (x.idx >= n){ rows.push(`<div class="mi-row"><span>${codePills([[x.line, x.code]])}Opens ${opensText(L, L.stations[x.idx])}</span></div>`); continue; }
     const idxs = L.stations.map((st, i) => st[0] === x.code ? i : -1).filter(i => i >= 0 && i < n);
     for (const d of [0, 1]){
-      const i = idxs.find(i => d ? i > 0 : i < n - 1); if (i === undefined) continue;
+      const i = idxs.find(i => L.bound ? !(d && i === 0) : d ? i > 0 : i < n - 1); if (i === undefined) continue;
       const arr = nextArrivals(x.line, i, d, now, 3);
       const tms = arr.map((m, k) => isShortTo(L, d, act, arr.to[k]) ? `${fmt(m)}<i class="sbc" title="Ends at ${esc(act[arr.to[k]][1])}">→${act[arr.to[k]][0]}</i>` : fmt(m));
-      rows.push(`<button class="mi-row mi-go" type="button" data-act="lineat" data-line="${x.line}"><span>${codePills([[x.line, x.code]])}To ${esc(dest(L, d, act))}</span><span class="mi-t">${arr.length ? tms.join(" · ") : arr.cut ? "No service · disruption" : "No more trains"}</span></button>`);
+      rows.push(`<button class="mi-row mi-go" type="button" data-act="lineat" data-line="${x.line}"><span>${codePills([[x.line, x.code]])}${esc(toW(dest(L, d, act)))}</span><span class="mi-t">${arr.length ? tms.join(" · ") : arr.cut ? "No service · disruption" : "No more trains"}</span></button>`);
     }
   }
   const dis = e.codes.some(x => hit.has(x.code));
@@ -4855,7 +4865,7 @@ function aStationTrains(e, now, count = 3){
     if (x.idx >= n){ out.push({line: x.line, code: x.code, opens: opensText(L, L.stations[x.idx])}); continue; }
     const idxs = L.stations.map((st, i) => st[0] === x.code ? i : -1).filter(i => i >= 0 && i < n);
     for (const d of [0, 1]){
-      const i = idxs.find(i => d ? i > 0 : i < n - 1); if (i === undefined) continue;
+      const i = idxs.find(i => L.bound ? !(d && i === 0) : d ? i > 0 : i < n - 1); if (i === undefined) continue;
       const fl = aFirstLast(x.line, i, d, now);
       const tmr = aNextDay(now), flT = aFirstLast(x.line, i, d, tmr);
       const mins = nextArrivals(x.line, i, d, now, count);
@@ -5013,7 +5023,7 @@ function aTrainsText(e, now, lineFilter, toward){
   if (toward){ const f = rows.filter(r => r.toward && r.toward.startsWith(toward.name)); if (f.length) rows = f; }
   const live = rows.filter(r => !r.opens), soon = rows.filter(r => r.opens);
   const codes = [...new Set(e.codes.map(x => x.code))].join(" · ");
-  const lines = live.map(r => `- ${aLineChip(r.line)} to ${r.toward}: ${r.mins.length ? aGroupEnds(r, now) : r.tomorrow != null ? `no more trains tonight; first one tomorrow at ${clockText(r.tomorrow)}` : "no more trains today"}`);
+  const lines = live.map(r => `- ${aLineChip(r.line)} ${toWl(r.toward)}: ${r.mins.length ? aGroupEnds(r, now) : r.tomorrow != null ? `no more trains tonight; first one tomorrow at ${clockText(r.tomorrow)}` : "no more trains today"}`);
   const s = soon.map(r => `${r.code} opens ${r.opens}.`);
   if (!live.length) return `**${e.name}** · ${codes}\n${s.join(" ") || "No trains stop here yet."}`;
   return `**${e.name}** · ${codes} · next trains\n${lines.join("\n")}${s.length ? "\n" + s.join(" ") : ""}\n${aTimesNote(live)}`;
@@ -5022,7 +5032,7 @@ function aFirstLastText(e, now, lineFilter){
   let rows = aStationTrains(e, now).filter(r => !r.opens);
   if (lineFilter){ const cs = aCodesOf(lineFilter); const f = rows.filter(r => cs.includes(r.line)); if (f.length) rows = f; }
   if (!rows.length) return `No trains stop at ${e.name} yet.`;
-  return `**${e.name}** · first and last trains today\n${rows.map(r => `- ${aLineChip(r.line)} to ${r.toward}: ${r.first != null ? `first ${clockText(r.first)}, last ${clockText(r.last)}` : "no trains today"}`).join("\n")}\n${aTimesNote(rows)}`;
+  return `**${e.name}** · first and last trains today\n${rows.map(r => `- ${aLineChip(r.line)} ${toWl(r.toward)}: ${r.first != null ? `first ${clockText(r.first)}, last ${clockText(r.last)}` : "no trains today"}`).join("\n")}\n${aTimesNote(rows)}`;
 }
 function aCrowdText(e){
   const c = aCrowd(e);
@@ -5065,7 +5075,7 @@ function aRouteText(a, b, now){
   const r = aRoute(a, b, now);
   if (!r) return `I couldn't find a train route from ${a.name} to ${b.name}${a.codes.every(x => x.idx >= activeStations(LINES[x.line], now.iso).length) || b.codes.every(x => x.idx >= activeStations(LINES[x.line], now.iso).length) ? ", because one of them isn't open yet" : ""}.`;
   const steps = r.legs.map(l => l.line
-    ? `- ${aLineChip(l.line)} towards ${l.toward}: ${l.from} to ${l.to}, ${l.stops} stop${l.stops === 1 ? "" : "s"}${l.next != null ? ` (next train ${aWhen(l.next, now)})` : l.noMore ? ` (no more trains go as far as ${l.to} ${now.mins >= 18 * 60 ? "tonight" : "today"})` : ""}`
+    ? `- ${aLineChip(l.line)} ${towardsW(l.toward)}: ${l.from} to ${l.to}, ${l.stops} stop${l.stops === 1 ? "" : "s"}${l.next != null ? ` (next train ${aWhen(l.next, now)})` : l.noMore ? ` (no more trains go as far as ${l.to} ${now.mins >= 18 * 60 ? "tonight" : "today"})` : ""}`
     : `- ${l.walk ? `Walk from ${l.at} to ${l.to}` : `Change at ${l.at}`}`);
   return `**${r.from} to ${r.to}** · about ${Math.round(r.mins)} min${r.changes > 0 ? `, ${r.changes} change${r.changes > 1 ? "s" : ""}` : ", no changes"}\n${steps.join("\n")}\nRough travel time from the usual schedule${r.changes > 0 ? `, with about ${A_CHANGE} min for each change` : ""}. It doesn't include waiting for the first train.`;
 }
@@ -6274,7 +6284,7 @@ function repRender(full){
       <p>Seen a train somewhere the app doesn't have it? Add it here. If the map has a train going that way due there within a few minutes (arriving, or just gone), that train is moved to where you saw it. If not, a new train appears from where you saw it and moves along the line, unless the map already shows as many trains as the line's train list says are out: then the nearest one is moved instead.</p>
       <form id="repF" autocomplete="off">
         <label>Line<select id="repLine">${lines.map(c => `<option value="${c}"${c === F.line ? " selected" : ""}>${esc(LINES[c].name)}</option>`).join("")}</select></label>
-        <label>Going towards<select id="repDir"><option value="0"${F.dir === 0 ? " selected" : ""}>${esc(dest(L, 0, act))}</option><option value="1"${F.dir === 1 ? " selected" : ""}>${esc(dest(L, 1, act))}</option></select></label>
+        <label>Going<select id="repDir"><option value="0"${F.dir === 0 ? " selected" : ""}>${esc(dest(L, 0, act))}</option><option value="1"${F.dir === 1 ? " selected" : ""}>${esc(dest(L, 1, act))}</option></select></label>
         <label>Where you saw it<select id="repSt">${stOpts}</select></label>
         <div class="rep-where"><label><input type="radio" name="repWhere" value="at"${F.between ? "" : " checked"}> At the platform</label><label><input type="radio" name="repWhere" value="after"${F.between ? " checked" : ""}> Just left it, on the way to the next station</label></div>
         <label>When you saw it<input type="time" id="repTime" value="${F.time}" required></label>
@@ -8098,7 +8108,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       const tap = !first && prevCode && isTapOut(prevCode, code);   // e.g. Newton: tap out and back in to change
       if (!first) steps.push(`<li class="rt-chg"><span class="rt-dot"></span><div>Change at <b>${esc(l.from)}</b> ${codePills(byName[l.from] || [])}${tap ? " · tap out to transfer" : ""} · about ${l.xfer} min walk${l.wait != null ? `, ${Math.max(0, Math.round(l.wait))} min wait` : ""}${window.tripTip ? tripTip(l.from, "chg", prev, l.line) : ""}</div></li>`);
       steps.push(`<li class="rt-board" style="--c:var(--${l.line})"><span class="rt-dot"></span><div>${codePills([[l.line, code]], "lg")} <b>${esc(l.from)}</b><br>
-        <span class="rt-sub">${esc(lineName(l.line))} towards ${esc(l.toward)}${l.wait != null ? ` · ${first ? (l.wait < 0.75 ? "train now" : `next train in ${Math.round(l.wait)} min`) : `train at ${clockText(l.board)}`}` : " · no more trains today"}</span></div></li>
+        <span class="rt-sub">${esc(lineName(l.line))} ${esc(towardsW(l.toward))}${l.wait != null ? ` · ${first ? (l.wait < 0.75 ? "train now" : `next train in ${Math.round(l.wait)} min`) : `train at ${clockText(l.board)}`}` : " · no more trains today"}</span></div></li>
         <li class="rt-ride" style="--c:var(--${l.line})"><span class="rt-bar"></span><div>${l.stops} stop${l.stops === 1 ? "" : "s"} · ${Math.round(l.ride)} min · ${l.km.toFixed(1)} km</div></li>`);
       first = false; prev = l.line; prevCode = l.toCode;
     }
@@ -8337,7 +8347,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       if (x.idx >= n){ out.push({line: x.line, code: x.code, opens: opensText(L, L.stations[x.idx])}); continue; }
       const idxs = L.stations.map((st, i) => st[0] === x.code ? i : -1).filter(i => i >= 0 && i < n);
       for (const d of [0, 1]){
-        const i = idxs.find(i => d ? i > 0 : i < n - 1); if (i === undefined) continue;
+        const i = idxs.find(i => L.bound ? !(d && i === 0) : d ? i > 0 : i < n - 1); if (i === undefined) continue;
         const arr = nextArrivals(x.line, i, d, now, cnt || 3), to = dest(L, d, act);
         const items = arr.map((m, k) => ({m, sb: isShortTo(L, d, act, arr.to[k]) ? act[arr.to[k]] : null}));
         const dis = segs.some(sg => (sg.lines || [sg.line]).includes(x.line) && (sg.codes || []).includes(x.code) && dirOk(sg, to));
@@ -8361,7 +8371,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       if (r.opens) return `<div class="dirrow" style="--c:var(--${r.line})"><span class="ln"></span><span class="to">${esc(r.code)} opens ${esc(r.opens)}</span><span class="t"></span></div>`;
       const f = r.items[0];
       const t = !f ? (r.dis ? "No service · disruption" : "No more trains") : `<em>${fmt(f.m)}</em>${f.sb ? `<i class="sbc" title="Ends at ${esc(f.sb[1])}">→${esc(f.sb[0])}</i>` : ""}${r.items.slice(1).map(x => " · " + mins(x.m)).join("")}`;
-      return `<div class="dirrow" style="--c:var(--${r.line})"><span class="ln"></span><span class="to">To ${esc(r.to)}${f && f.sb ? ` <span class="sb">next ends ${esc(f.sb[1])}</span>` : ""}</span><span class="t">${t}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span></div>`;
+      return `<div class="dirrow" style="--c:var(--${r.line})"><span class="ln"></span><span class="to">${esc(toW(r.to))}${f && f.sb ? ` <span class="sb">next ends at ${esc(f.sb[1])}</span>` : ""}</span><span class="t">${t}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span></div>`;
     }).join("");
     return `<button type="button" class="fav" data-fav="${esc(name)}"><div class="fav-h"><b>${esc(name)}</b>${codes}${crowdTop(e)}</div>${rows}</button>`;
   }
@@ -8437,11 +8447,11 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     let anySb = false, anyDis = false;
     for (const r of rs){
       if (r.opens){ rows.push(`<div style="--c:var(--${r.line})"><span>${codePills([[r.line, r.code]])}Opens ${esc(r.opens)}</span></div>`); continue; }
-      if (!r.items.length){ rows.push(`<div style="--c:var(--${r.line})"><span>${codePills([[r.line, r.code]])}To ${esc(r.to)}</span><span class="t">${r.dis ? "No service · disruption" : "No more trains"}</span></div>`); continue; }
+      if (!r.items.length){ rows.push(`<div style="--c:var(--${r.line})"><span>${codePills([[r.line, r.code]])}${esc(toW(r.to))}</span><span class="t">${r.dis ? "No service · disruption" : "No more trains"}</span></div>`); continue; }
       const groups = [];
-      for (const it of r.items){ const nm = it.sb ? it.sb[1] : r.to; let g = groups.find(x => x.nm === nm); if (!g) groups.push(g = {nm, sb: !!it.sb, ms: []}); g.ms.push(it.m); if (it.sb) anySb = true; }
+      for (const it of r.items){ const nm = it.sb ? (BOUND_RE.test(r.to) ? `${r.to} · ends at ${it.sb[1]}` : it.sb[1]) : r.to; let g = groups.find(x => x.nm === nm); if (!g) groups.push(g = {nm, sb: !!it.sb, ms: []}); g.ms.push(it.m); if (it.sb && !BOUND_RE.test(r.to)) anySb = true; }
       if (r.dis) anyDis = true;
-      for (const g of groups) rows.push(`<div style="--c:var(--${r.line})"${g.sb ? ' class="sbrow"' : ""}><span>${codePills([[r.line, r.code]])}To ${esc(g.nm)}${g.sb ? `<span class="sb">special-bound</span>` : ""}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span><span class="t"><em>${fmt(g.ms[0])}</em>${g.ms.slice(1).map(m => " · " + mins(m)).join("")}</span></div>`);
+      for (const g of groups) rows.push(`<div style="--c:var(--${r.line})"${g.sb ? ' class="sbrow"' : ""}><span>${codePills([[r.line, r.code]])}${esc(toW(g.nm))}${g.sb && !BOUND_RE.test(r.to) ? `<span class="sb">special-bound</span>` : ""}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span><span class="t"><em>${fmt(g.ms[0])}</em>${g.ms.slice(1).map(m => " · " + mins(m)).join("")}</span></div>`);
     }
     const seen = new Set(), cws = e.codes.filter(x => !seen.has(x.code) && seen.add(x.code)).map(x => { const c = crowdChip(x.code); return c ? `<span>${codePills([[x.line, x.code]])}${c}</span>` : ""; }).join("");
     return `<div><p class="hsub">Next trains${TT && !SIM.est ? " · LTA timetable" : " · estimated"}</p><div class="plat">${rows.join("")}</div>
@@ -8470,7 +8480,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const rows = lines.map(c => {
       const L = LINES[c], act = activeStations(L, iso), cs = codes.filter(([l]) => l === c);
       const live = cs.some(([, code]) => act.some(s => s[0] === code));
-      const ends = !live ? "Not open yet" : L.loop ? "Loop service" : [0, 1].map(d => dest(L, d, act)).filter(x => x !== name).map(x => `to ${esc(x)}`).join(" · ");
+      const ends = !live ? "Not open yet" : L.loop ? "Loop service" : [0, 1].map(d => dest(L, d, act)).filter(x => x !== name).map(x => esc(toWl(x))).join(" · ");
       return `<li style="--c:var(--${c})"><span class="code" style="background:var(--${c})">${c === "CG" ? "CGL" : c}</span><span><b>${esc((H_LINE[c] && H_LINE[c].name) || L.name)}</b><br><small>${ends}</small></span></li>`;
     }).join("");
     const xp = XPLAT[name] ? `<p class="hint" style="margin:0">${esc(XPLAT[name])} trains stop across the same platform here for some directions, so some changes are just a walk across.</p>` : "";
@@ -8503,11 +8513,11 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     return `<div class="tsum" style="--c:var(--${x.line})">${trainSVG(t.dir)}<div><b>${t.atStation ? "Now at" : "Next stop"} ${esc(stop)}</b><br><span class="sub">${eta}${window.repWhen && repWhen(t) ? ` · ${repWhen(t)}` : ""}</span></div></div>
       <div class="hfacts">
         <div><span>Bound</span><b>${esc(full)}</b><small>direction of travel</small></div>
-        <div><span>Ends at</span><b>${esc(to)}</b><small>${sb ? "special-bound" : "runs the whole way"}</small></div>
+        <div><span>Ends at</span><b>${esc(BOUND_RE.test(to) ? (sb ? String(to).split(" ends at ")[1] : "Keeps going") : to)}</b><small>${BOUND_RE.test(to) ? (sb ? "ends early" : "round the loop") : sb ? "special-bound" : "runs the whole way"}</small></div>
       </div>
       ${window.spotTagHTML ? spotTagHTML(x.line, t, T.now.iso) : ""}
       ${window.rtTrainNote ? rtTrainNote(x.line, t) : ""}
-      ${sb ? `<p class="hint" style="margin:0">This train ends at <b>${esc(to)}</b> instead of going all the way to ${esc(full)}. On the map it's drawn hollow.</p>` : ""}`;
+      ${sb ? `<p class="hint" style="margin:0">${BOUND_RE.test(to) ? `This train ends at <b>${esc(String(to).split(" ends at ")[1])}</b> instead of going on round the loop.` : `This train ends at <b>${esc(to)}</b> instead of going all the way to ${esc(full)}.`} On the map it's drawn hollow.</p>` : ""}`;
   }
   function trainStatic(x){
     const f = (FLEET[x.line] || []).filter(m => m[5] !== "soon");
@@ -8521,7 +8531,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       return [`${codePills(byName[x.name] || [])} Station`, x.name];
     }
     const T = trainNow(x); if (!T) return null;
-    return [`${lineChip(x.line, x.line === "CG" ? "CGL" : x.line)} ${esc(T.L.name)}${T.sb ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(T.t) : ""}`, `Train to ${T.to}`];
+    return [`${lineChip(x.line, x.line === "CG" ? "CGL" : x.line)} ${esc(T.L.name)}${T.sb ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(T.t) : ""}`, trainToW(T.to)];
   }
   function hxRender(){
     if (!HX) return;
@@ -8666,7 +8676,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const rows = [], dis = [];
     for (const r of favDeps(e, 6)){
       if (r.opens){ rows.push({c: colOf(r.line), l: lineLabel(r.line), to: `${r.code} opens ${r.opens}`, t: []}); continue; }
-      rows.push({c: colOf(r.line), l: lineLabel(r.line), to: "To " + r.to, t: r.items.map(it => Math.round((now + it.m * 60000) / 1000) * 1000), sb: r.items[0] && r.items[0].sb ? r.items[0].sb[1] : "", d: !!r.dis});
+      rows.push({c: colOf(r.line), l: lineLabel(r.line), to: toW(r.to), t: r.items.map(it => Math.round((now + it.m * 60000) / 1000) * 1000), sb: r.items[0] && r.items[0].sb ? r.items[0].sb[1] : "", d: !!r.dis});
       if (r.dis && !dis.includes(r.line)) dis.push(r.line);
     }
     let dtext = "";
@@ -8745,11 +8755,11 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       if (l.wait == null) return;
       const nx = legs[k + 1], last = k === legs.length - 1, bd = ep(l.board);
       if (bd - 120000 > t0 + 20000) out.push({at: bd - 120000, title: k ? `Change at ${l.from}` : `Your train from ${l.from}`,
-        text: `${lineFull(l.line)} towards ${l.toward} at ${clockText(l.board)}, in about 2 min.`});
+        text: `${lineFull(l.line)} ${towardsW(l.toward)} at ${clockText(l.board)}, in about 2 min.`});
       const per = l.stops > 0 ? l.ride / l.stops : 2;
       const al = Math.max(ep(l.arrive - per), bd + 30000);
       if (al > t0 + 15000) out.push({at: al, title: `Alight at ${l.to} next`,
-        text: `Your train arrives at ${l.to} in 1 stop, about ${clockText(l.arrive)}.${last ? "" : nx ? ` Then change to the ${lineFull(nx.line)} towards ${nx.toward}.` : ""}`});
+        text: `Your train arrives at ${l.to} in 1 stop, about ${clockText(l.arrive)}.${last ? "" : nx ? ` Then change to the ${lineFull(nx.line)} ${towardsW(nx.toward)}.` : ""}`});
     });
     return out.sort((x, y) => x.at - y.at).slice(0, 8);
   }

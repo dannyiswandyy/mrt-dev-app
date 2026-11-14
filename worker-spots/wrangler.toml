@@ -1,0 +1,12 @@
+# MRT Dev: shared sightings. See README.md for setup.
+name = "mrt-spots"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+# The KV namespace that keeps the sightings (3 days). Create it, then put its id here (or bind it in the dashboard).
+[[kv_namespaces]]
+binding = "SPOTS"
+id = "PUT-YOUR-KV-NAMESPACE-ID-HERE"
+
+# The key the app sends is a secret, NOT written here. Set it with:
+#   npx wrangler secret put SPOTS_KEY

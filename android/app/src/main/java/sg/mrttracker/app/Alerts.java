@@ -32,6 +32,7 @@ import java.util.List;
 final class Alerts {
     static final String CH_DISRUPT = "disruptions";
     static final String CH_TRIP = "trip";
+    static final String CH_SPOT = "spotting";
     private static final int DISRUPT_ID = 2001;
     private static final int TRIP_BASE = 3000;
     private static final int TRIP_MAX = 8;
@@ -55,6 +56,9 @@ final class Alerts {
         NotificationChannel t = new NotificationChannel(CH_TRIP, "Trip reminders", NotificationManager.IMPORTANCE_HIGH);
         t.setDescription("When to board and when to get off, from the planned timetable");
         nm.createNotificationChannel(t);
+        NotificationChannel s = new NotificationChannel(CH_SPOT, "Rare-train alerts", NotificationManager.IMPORTANCE_DEFAULT);
+        s.setDescription("When a train set you're watching is spotted today (shared sightings)");
+        nm.createNotificationChannel(s);
     }
 
     /** True when this app may show notifications (Android 13+ asks the person first). */
@@ -86,7 +90,7 @@ final class Alerts {
         }
     }
 
-    private static String clip(String s, int n) {
+    static String clip(String s, int n) {
         s = s == null ? "" : s.trim();
         return s.length() > n ? s.substring(0, n - 1) + "…" : s;
     }

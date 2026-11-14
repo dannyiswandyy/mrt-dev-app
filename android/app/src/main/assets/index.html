@@ -988,6 +988,7 @@ select,input[type="time"],input[type="text"],textarea{
 .dirrow .fl{font-size:11px;opacity:.6;font-weight:500}
 .sp-sets{display:grid;gap:6px}
 .lrns{display:grid;gap:4px;margin-top:6px;font-size:13px}
+.sp-watch{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .lrn{display:grid;grid-template-columns:1fr auto;gap:0 8px;padding:6px 8px;border-left:4px solid var(--c);border-bottom:1px solid var(--soft)}
 .lrn small{grid-column:1/-1;opacity:.6}
 .sp-sets button{display:flex;justify-content:space-between;gap:8px;align-items:center;text-align:left;padding:8px 10px;border:1px solid var(--soft);border-left:4px solid var(--c);border-radius:10px;background:none;color:inherit;font:inherit}
@@ -9465,6 +9466,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       set: normSet(fd.get("set")), slot: f.dataset.slot || "", dir: f.dataset.dir || "", ...(tk ? {tk} : {}), ...(lo ? {lo} : {})});
     if (spots.length > 2000) spots.length = 2000;
     saveSpots(); tagIdx = null; spVer++;
+    sharedPost(spots[0]);
     const box = $("hxLog"); box.innerHTML = `<p class="sp-ok">Saved to your Spotter's log · ${spots.length} sighting${spots.length === 1 ? "" : "s"}</p><div class="mi-act"><button class="btn ghost" type="button" data-sp="log">Open Spotter's log</button></div>`;
     hmSub();
   });
@@ -9476,7 +9478,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const by = new Map();
     for (const s of spots){ if (!s.set) continue; let g = by.get(s.set); if (!g) by.set(s.set, g = {set: s.set, n: 0, last: s, lines: new Set(), slots: new Set(), days: new Set()}); g.n++; g.lines.add(s.line); if (s.slot) g.slots.add(s.slot); g.days.add(new Date(s.at + 8 * 3600e3).toISOString().slice(0, 10)); }
     if (!by.size) return "";
-    const rows = [...by.values()].sort((a, b) => b.last.at - a.last.at).map(g => `<button type="button" data-spset="${esc(g.set)}" class="${F.set === g.set ? "on" : ""}" style="--c:var(--${esc(g.last.line)})"><b>${esc(g.set)}</b><span>${g.n} sighting${g.n === 1 ? "" : "s"} · ${g.days.size} day${g.days.size === 1 ? "" : "s"}${g.slots.size ? ` · slot${g.slots.size === 1 ? "" : "s"} ${esc([...g.slots].slice(0, 4).join(", "))}` : ""}<br>last ${esc(new Date(g.last.at + 8 * 3600e3).toISOString().slice(5, 10).split("-").reverse().join("/"))} ${esc(hm24(g.last.at))} at ${esc(g.last.st)}</span></button>`).join("");
+    const rows = [...by.values()].sort((a, b) => b.last.at - a.last.at).map(g => `<button type="button" data-spset="${esc(g.set)}" class="${F.set === g.set ? "on" : ""}" style="--c:var(--${esc(g.last.line)})"><b>${watch.includes(g.set) ? "★ " : ""}${esc(g.set)}</b><span>${g.n} sighting${g.n === 1 ? "" : "s"} · ${g.days.size} day${g.days.size === 1 ? "" : "s"}${g.slots.size ? ` · slot${g.slots.size === 1 ? "" : "s"} ${esc([...g.slots].slice(0, 4).join(", "))}` : ""}<br>last ${esc(new Date(g.last.at + 8 * 3600e3).toISOString().slice(5, 10).split("-").reverse().join("/"))} ${esc(hm24(g.last.at))} at ${esc(g.last.st)}</span></button>`).join("");
     return `<div class="hm-h"><h2>Your sets</h2>${F.set ? `<button type="button" data-spset="">Show all</button>` : ""}</div><div class="sp-sets">${rows}</div>`;
   }
   let spMsg = "";
@@ -9491,6 +9493,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       <div class="hm-h"><h2>Badges</h2></div>
       <div class="sp-badges">${got.map(b => `<div class="sp-badge${b.done ? " on" : ""}" title="${esc(b.desc)}"><i>${esc(BADGE_IC[b.id] || "★")}</i><b>${esc(b.name)}</b><span>${b.done ? "Earned" : `${b.have}/${b.of}`} · ${esc(b.desc)}</span></div>`).join("")}</div>
       ${setsHTML()}
+      ${sharedHTML()}
       ${learnHTML()}
       <div class="hm-h"><h2>Sightings${F.set ? ` of ${esc(F.set)}` : ""}</h2><button type="button" data-spv="export"${spots.length ? "" : " disabled"}>Export</button></div>
       ${spMsg ? `<p class="sp-ok">${esc(spMsg)}</p>` : ""}
@@ -9517,11 +9520,18 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
   $("spotRoot").addEventListener("click", e => {
     const v = e.target.closest("[data-spv]"), d = e.target.closest("[data-spdel]"), ss = e.target.closest("[data-spset]");
     if (ss){ F.set = F.set === ss.dataset.spset ? "" : ss.dataset.spset; spMsg = ""; spotRender(); return; }
+    const uw = e.target.closest("[data-spunwatch]");
+    if (uw){ watch = watch.filter(w => w !== uw.dataset.spunwatch); store.set(WATCH_KEY, watch); spotRender(); return; }
     if (v && v.dataset.spv === "home") showView("home");
     if (v && v.dataset.spv === "export") exportLog();
     if (d && confirm("Delete this sighting?")){ spots = spots.filter(s => s.id !== d.dataset.spdel); saveSpots(); tagIdx = null; spVer++; mDirty = true; spotRender(); hmSub(); }
   });
   $("spotRoot").addEventListener("change", e => {
+    if (e.target.id === "shOn" || e.target.id === "shUrl" || e.target.id === "shKey"){
+      SH.on = $("shOn").checked; SH.url = $("shUrl").value.trim(); SH.key = $("shKey").value.trim(); store.set(SH_KEY, SH);
+      shared = {day: "", items: [], at: 0, err: ""}; sharedFetch(true).then(spotRender); spotRender(); return;
+    }
+    if (e.target.id === "watchAdd"){ const v = normSet(e.target.value); if (v && !watch.includes(v)){ watch.push(v); store.set(WATCH_KEY, watch); watchCheck(); } spotRender(); return; }
     if (e.target.id === "learnOn"){ learnOn = e.target.checked; store.set(LEARN_KEY, learnOn); mDirty = true; return; }
     const f = e.target.closest("[data-spf]"); if (!f) return;
     F[f.dataset.spf] = f.value; if (f.dataset.spf === "line") F.model = ""; spMsg = ""; spotRender();
@@ -9618,6 +9628,70 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const b = learnTable()[code + "|" + dir + "|" + Math.floor(sgNow().mins / 60) % 24];
     return b && b.n >= LEARN_MIN ? b.off : 0;
   };
+  /* ---- Shared sightings (worker-spots) and rare-train alerts ----
+     With a server set up (worker-spots/README.md) and sharing on, a sighting with a set number is sent there, and
+     today's sightings from every sharing phone come back every 2 minutes while the app is open. Sets you watch
+     get a notification the first time they're spotted each day. */
+  const SH_KEY = "mrt.shared", WATCH_KEY = "mrt.watch", SEEN_KEY = "mrt.watchSeen";
+  let SH = store.get(SH_KEY, null) || {};
+  if (!SH.device) { SH.device = Array.from({length: 16}, () => "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)]).join(""); store.set(SH_KEY, SH); }
+  let watch = store.get(WATCH_KEY, []); if (!Array.isArray(watch)) watch = [];
+  let shared = {day: "", items: [], at: 0, err: ""};
+  const shOK = () => !!(SH.on && SH.url && SH.key && APP && APP.sharedSpots);
+  function shCall(path, body){
+    return new Promise(res => { const id = "sh" + (++reqId); pending[id] = (code, b) => res({code, body: b}); APP.sharedSpots(id, SH.url.replace(/\/+$/, "") + path, SH.key, body ? JSON.stringify(body) : ""); });
+  }
+  function sharedPost(s){
+    if (!shOK() || !s.set || !s.slot) return;
+    shCall("/sightings", {line: s.line, slot: s.slot, set: s.set, st: s.st, at: s.at, dir: s.dir || "", model: s.model || "", device: SH.device})
+      .then(r => { shared.err = r.code === 200 ? "" : r.code === 403 ? "The server says the key is wrong." : `Couldn't send it (${r.code || "no connection"}).`; sharedFetch(true); });
+  }
+  let shBusy = false;
+  async function sharedFetch(force){
+    if (!shOK() || shBusy || document.hidden) return;
+    if (!force && Date.now() - shared.at < 110e3) return;
+    shBusy = true;
+    try {
+      const day = sgNow().iso, r = await shCall("/sightings?day=" + day);
+      if (r.code === 200){ const j = JSON.parse(r.body); shared = {day: j.day || day, items: Array.isArray(j.items) ? j.items : [], at: Date.now(), err: ""}; watchCheck(); mDirty = true; }
+      else shared.err = r.code === 403 ? "The server says the key is wrong." : `Couldn't reach the server (${r.code || "no connection"}).`;
+    } catch(e){ shared.err = "The server's answer couldn't be read."; }
+    shBusy = false;
+  }
+  setInterval(() => sharedFetch(false), 30e3); setTimeout(() => sharedFetch(true), 4000);
+  window.sharedSetFor = (line, slot, iso) => {
+    if (!shOK() || shared.day !== iso) return null;
+    let best = null;
+    for (const it of shared.items) if (it.line === line && it.slot === String(slot) && (!best || it.n > best.n || (it.n === best.n && it.last.at > best.last.at))) best = it;
+    return best;
+  };
+  function watchCheck(){
+    if (!watch.length || !APP || !APP.spotNotify) return;
+    const seen = store.get(SEEN_KEY, {}) || {}, day = shared.day; let changed = false;
+    for (const it of shared.items){
+      if (!watch.includes(it.set)) continue;
+      const k = day + "|" + it.set + "|" + it.line + "|" + it.slot; if (seen[k]) continue;
+      seen[k] = 1; changed = true;
+      let where = "";
+      try { const t = trainsOn(it.line, sgNow()).find(x => x.ref && ttSlotOf(x.ref.tid) === it.slot); if (t){ const act = activeStations(LINES[it.line], sgNow().iso); where = ` Now ${t.atStation ? "at" : "heading for"} ${act[t.next][1]}, towards ${dest(LINES[it.line], t.dir, act)}.`; } } catch(e){}
+      APP.spotNotify(`${it.set} is out today`, `${it.line === "CG" ? "CGL" : it.line} slot ${it.slot}: spotted ${hm24(it.last.at)} at ${it.last.st} (${it.n} spotter${it.n === 1 ? "" : "s"}).${where}`);
+    }
+    if (changed){ for (const k in seen) if (!k.startsWith(day)) delete seen[k]; store.set(SEEN_KEY, seen); }
+  }
+  function sharedHTML(){
+    if (!APP || !APP.sharedSpots) return "";
+    const st = !SH.on ? "Off." : !SH.url || !SH.key ? "Add the server address and key to start." : shared.err ? shared.err : shared.at ? `Working · ${shared.items.length} set${shared.items.length === 1 ? "" : "s"} spotted today by everyone sharing · checked ${hm24(shared.at)}` : "Checking…";
+    return `<div class="hm-h"><h2>Shared sightings</h2></div>
+      <p class="hint" style="margin:0 0 6px">Share sightings that have a set number with everyone using the same server, and see theirs on train cards. Set up the server with worker-spots/README.md in the repo.</p>
+      <label class="toggle"><input type="checkbox" id="shOn"${SH.on ? " checked" : ""}> Share my sightings</label>
+      <label class="rt-f"><span>Server</span><input id="shUrl" value="${esc(SH.url || "")}" placeholder="https://mrt-spots.your-name.workers.dev" autocomplete="off" inputmode="url"></label>
+      <label class="rt-f"><span>Key</span><input id="shKey" type="password" value="${esc(SH.key || "")}" placeholder="SPOTS_KEY" autocomplete="off"></label>
+      <p class="hint" style="margin:4px 0">${esc(st)}</p>
+      <div class="hm-h"><h2>Watched sets</h2></div>
+      <p class="hint" style="margin:0 0 6px">A notification when one of these is spotted today (needs shared sightings).</p>
+      <div class="sp-watch">${watch.map(w => `<button type="button" class="hchip" data-spunwatch="${esc(w)}">★ ${esc(w)} ×</button>`).join("")}</div>
+      <label class="rt-f"><span>Watch a set</span><input id="watchAdd" maxlength="16" placeholder="e.g. 601/602" autocomplete="off"></label>`;
+  }
   function learnHTML(){
     const t = learnTable(), rows = Object.entries(t).sort((a, b) => a[0].localeCompare(b[0]));
     if (!rows.length) return "";
@@ -9696,7 +9770,9 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const s = window.spotSetFor(line, slot, iso), run = "T" + String(slot).padStart(3, "0");
     const sg = SG_PAGE[SET_GROUP[line] || ""] || "https://spotters.sgtrains.com/";
     const mine = s ? `<p class="hint" style="margin:0"><b>${esc(s.set)}</b>${s.model ? ` · ${esc(s.model)}` : ""} · spotted ${esc(hm24(s.at))} at ${esc(s.st)} <span class="sb">app spotting</span></p>` : "";
-    return `${mine}<p class="hint" style="margin:0"><a href="${esc(sg)}" target="_blank" rel="noopener">Look up run ${esc(run)} on SGTrains</a> (opens in your browser)</p>`;
+    const sh = window.sharedSetFor ? window.sharedSetFor(line, slot, iso) : null;
+    const shl = sh && !(s && s.set === sh.set && sh.n === 1) ? `<p class="hint" style="margin:0"><b>${esc(sh.set)}</b> · ${sh.n} spotter${sh.n === 1 ? "" : "s"} · last ${esc(hm24(sh.last.at))} at ${esc(sh.last.st)} <span class="sb">shared</span></p>` : "";
+    return `${mine}${shl}<p class="hint" style="margin:0"><a href="${esc(sg)}" target="_blank" rel="noopener">Look up run ${esc(run)} on SGTrains</a> (opens in your browser)</p>`;
   };
   window.spotTagHTML = (line, t, iso) => {
     const s = window.spotTag(line, t, iso); if (!s) return "";

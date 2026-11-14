@@ -739,6 +739,51 @@ public class MainActivity extends Activity {
             TrainWidget.save(getApplicationContext(), json);
         }
 
+        /**
+         * Shared sightings (worker-spots): GET (empty body) or POST (JSON body) to a Cloudflare Worker the person set
+         * up, with their key. Only https addresses on workers.dev. The answer comes back through window.__native.
+         */
+        @JavascriptInterface
+        public void sharedSpots(final String id, final String url, final String key, final String body) {
+            new Thread(() -> {
+                int code = 0;
+                String out = "";
+                try {
+                    URL u = new URL(url);
+                    if (!"https".equals(u.getProtocol()) || !u.getHost().endsWith(".workers.dev") || key == null || key.isEmpty()
+                            || (body != null && body.length() > 4000)) throw new java.io.IOException("Not allowed");
+                    HttpURLConnection c = (HttpURLConnection) u.openConnection();
+                    c.setConnectTimeout(10000);
+                    c.setReadTimeout(15000);
+                    c.setRequestProperty("X-Spots-Key", key);
+                    if (body != null && !body.isEmpty()) {
+                        c.setRequestMethod("POST");
+                        c.setDoOutput(true);
+                        c.setRequestProperty("content-type", "application/json");
+                        try (java.io.OutputStream os = c.getOutputStream()) {
+                            os.write(body.getBytes(StandardCharsets.UTF_8));
+                        }
+                    }
+                    code = c.getResponseCode();
+                    InputStream in = code < 400 ? c.getInputStream() : c.getErrorStream();
+                    out = in == null ? "" : readAll(in);
+                    if (out.length() > 2_000_000) out = "";
+                    c.disconnect();
+                } catch (Exception e) {
+                    out = "";
+                }
+                final String js = "window.__native(" + JSONObject.quote(id) + "," + code + "," + JSONObject.quote(out) + ")";
+                runOnUiThread(() -> web.evaluateJavascript(js, null));
+            }).start();
+        }
+
+        /** A rare-train alert: a set you're watching was spotted today. */
+        @JavascriptInterface
+        public void spotNotify(String title, String text) {
+            if (title == null || title.isEmpty()) return;
+            Alerts.post(getApplicationContext(), Alerts.CH_SPOT, 5000 + Math.abs(title.hashCode() % 500), Alerts.clip(title, 120), Alerts.clip(text == null ? "" : text, 300));
+        }
+
         /** What the widget needs to work out trains by itself: line colours and names, public holidays, slower trains. */
         @JavascriptInterface
         public void widgetMeta(String json) {

@@ -25,7 +25,9 @@ function serviceActive(d,svc,date){
  let k=dayKey(date),s=d.services?.find(x=>Array.isArray(x)&&String(x[0])===String(svc));
  if(!s)return true;
  if(String(k)<String(s[2]||"00000000")||String(k)>String(s[3]||"99999999"))return false;
- let dow=(new Date(date).getDay()+6)%7,mask=String(s[1]||"0000000");
+ // public holidays (the page's PH_DAYS) run the Sunday and public holiday timetable: LTA's timetable doesn't list them
+ let ph=false;try{ph=!!PH_DAYS[k.slice(0,4)+"-"+k.slice(4,6)+"-"+k.slice(6)]}catch(e){}
+ let dow=ph?6:(new Date(date).getDay()+6)%7,mask=String(s[1]||"0000000");
  let active=mask[dow]==="1";
  for(const e of (d.except?.[k]||[])){if(String(e[0])===String(d.services.indexOf(s))){active=e[1]===1}}
  return active;

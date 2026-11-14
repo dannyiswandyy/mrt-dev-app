@@ -2081,7 +2081,10 @@ try {
 const ttDayCache = {};
 /* Service calendars running on a service day (handles public holidays and other exceptions). */
 function ttServices(iso){
-  const ymd = iso.replace(/-/g, ""), dow = (new Date(iso + "T00:00:00Z").getUTCDay() + 6) % 7;   // Mon = 0
+  // LTA's timetable has no public holidays in it: on a public holiday (PH_DAYS, including the Monday after one on
+  // a Sunday), trains run the Sunday and public holiday timetable, so it's taken as a Sunday. LTA's own date
+  // changes (calendar_dates, such as Circle Line special timetables) still apply on top.
+  const ymd = iso.replace(/-/g, ""), dow = PH_DAYS[iso] ? 6 : (new Date(iso + "T00:00:00Z").getUTCDay() + 6) % 7;   // Mon = 0
   const on = new Set();
   TT.services.forEach(([, days, start, end], i) => { if (days[dow] === "1" && ymd >= start && ymd <= end) on.add(i); });
   for (const [i, type] of (TT.except[ymd] || [])) type === 1 ? on.add(i) : on.delete(i);

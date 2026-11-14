@@ -245,6 +245,9 @@ jobs:
               </application>
           </manifest>
           MRTAPP_EOF
+          mkdir -p 'mrt-tracker-app/app/src/main/assets'
+          # mrt-tracker-app/app/src/main/assets/index.html is stored compressed (gzip, then base64) to keep this file under GitHub's 500 KB limit
+          base64 -d data/mrt-dev-page.b64 | gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'
           # Add the newly discovered Woodlands webcam as an additional Live Cam source.
           python3 - <<'PY'
           from pathlib import Path
@@ -271,9 +274,6 @@ jobs:
               p.write_text(h, encoding='utf-8')
           PY
 
-          mkdir -p 'mrt-tracker-app/app/src/main/assets'
-          # mrt-tracker-app/app/src/main/assets/index.html is stored compressed (gzip, then base64) to keep this file under GitHub's 500 KB limit
-          base64 -d data/mrt-dev-page.b64 | gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'
 
           # DEV spotting-log diagnostic: inspect the existing spotting layer before patching it.
           # This does not alter the app; it only prints the relevant functions/keys into Actions logs.

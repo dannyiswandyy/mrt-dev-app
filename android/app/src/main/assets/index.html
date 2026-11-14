@@ -1932,8 +1932,10 @@ function trainsOnRaw(code, now, noReports){
     for (const r of runsFor(code, dayOf(now), dir)){
       const late = late0 + (mv ? mv.get(code + dir + r.t) || 0 : 0);
       const dep = r.t, e = now.mins - late - dep, e0 = r.a ? T.off[r.a] - L.dwell : 0, trip = T.off[r.b];
-      if (e > trip + stay && e < trip + stay + TT_LAYOVER_MAX / 60){
-        // its run is over: it waits at the end, facing the other way, until its next run sets off (that run's id from now on)
+      if (code === "SEN" && e > trip + stay && e < trip + stay + TT_LAYOVER_MAX / 60){
+        // a Sentosa Express run is over: it waits at the end, facing the other way, until its next run sets off (that
+        // run's id from now on). Only there (it never has LTA's timetable): on other lines estimated runs aren't real
+        // trains, so a waiting train would be an extra one (the Changi branch would show 3 trains where 2 run at night).
         const y = estLinks(code, dayOf(now), n).get(code + dir + dep);
         if (y){
           const late2 = camAdj(code, y.dir) + (mv ? mv.get(code + y.dir + y.r.t) || 0 : 0);

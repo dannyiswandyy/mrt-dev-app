@@ -1,0 +1,53 @@
+name: Probe LTA GTFS realtime (temporary)
+# One-off check by Claude: what LTA DataMall's GTFS Realtime train feeds look like, so the app can use them.
+# Run by hand only; doesn't build or publish anything. Will be removed once the feeds are wired in.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Look at LTA's GTFS Realtime train feeds
+        env:
+          LTA_ACCOUNT_KEY: ${{ secrets.LTA_ACCOUNT_KEY }}
+        run: |
+          python3 - <<'PY'
+          import io, json, os, re, urllib.request, zipfile
+          key = os.environ.get("LTA_ACCOUNT_KEY", "").strip()
+          print("key present:", bool(key))
+          def get(url, headers=None):
+              req = urllib.request.Request(url, headers=dict({"User-Agent": "MRT-Tracker-Dev/1.0"}, **(headers or {})))
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      return r.status, r.headers.get("Content-Type"), r.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.headers.get("Content-Type"), e.read()
+              except Exception as e:
+                  return None, None, str(e).encode()
+          hide = lambda t: re.sub(r"(?i)(X-Amz-(?:Signature|Credential|Security-Token)=)[^&\s\"<]+", r"\1[hidden]", t)
+          # 1. LTA's public description packages
+          for z in ["GTFSRealtimeTrainTripUpdates", "GTFSRealTimeTrainServiceAlerts", "GTFSScheduleTrain"]:
+              st, ct, b = get(f"https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/{z}.zip")
+              print(f"\n=== {z}.zip: HTTP {st} {ct} {len(b)} bytes")
+              try:
+                  zf = zipfile.ZipFile(io.BytesIO(b))
+                  for n in zf.namelist():
+                      d = zf.read(n)
+                      print(f"--- {n} ({len(d)} bytes)")
+                      if n.lower().endswith((".txt", ".json", ".xml", ".csv", ".md")):
+                          print(hide(d[:3000].decode("utf-8", "replace")))
+              except Exception as e:
+                  print("not a zip:", e, b[:200])
+          # 2. Likely API addresses, with the key
+          base = "https://datamall2.mytransport.sg/ltaodataservice/"
+          for ep in ["GTFSRealtimeTrainTripUpdates", "GTFSRealTimeTrainTripUpdates", "GTFSRTTrainTripUpdates", "GTFSRealtimeTrainServiceAlerts",
+                     "GTFSRealTimeTrainServiceAlerts", "GTFSRTTrainServiceAlerts", "GTFSRealtimeTrain", "GTFSScheduleTrain"]:
+              st, ct, b = get(base + ep, {"AccountKey": key, "Accept": "application/json"})
+              txt = b[:600].decode("utf-8", "replace") if ct and ("json" in ct or "xml" in ct or "text" in ct) else repr(b[:80])
+              print(f"\n=== {ep}: HTTP {st} {ct} {len(b)} bytes\n{hide(txt)}")
+              links = [u for u in re.findall(rb'https://[^"\s<>]+', b) if b"ltaodataservice" not in u] if st == 200 else []
+              if links:
+                  st2, ct2, b2 = get(links[0].decode().replace("\\u0026", "&"))
+                  print(f"   link -> HTTP {st2} {ct2} {len(b2)} bytes, starts {b2[:24]!r}")
+          PY

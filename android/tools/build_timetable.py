@@ -380,7 +380,7 @@ def process(z, data):
     unmatched_stops = sorted({stops[sid].get("stop_name", sid) for sid, c in stop_cands.items()
                               if not c and stops[sid].get("location_type", "0") in ("", "0")})
 
-    out = {ln: {"pats": [], "trips": []} for ln in LINES}
+    out = {ln: {"pats": [], "trips": [], "tripMeta": {}} for ln in LINES}
     pat_idx = {ln: {} for ln in LINES}
     per_line = {ln: 0 for ln in LINES}
     skipped = []
@@ -446,6 +446,23 @@ def process(z, data):
                 pat_idx[line][key] = len(out[line]["pats"])
                 out[line]["pats"].append([idx[0], d, arrs, deps, head])
             p = pat_idx[line][key]
+            # Keep the operational metadata needed by the dev app's depot/repositioning detector.
+            # GTFS block_id links scheduled trips operated by the same vehicle; it is not itself a
+            # non-revenue flag, so the app only uses it as one signal in a conservative classifier.
+            tr = trips[tid]
+            first_row, last_row = rows[0], rows[-1]
+            out[line]["tripMeta"][tid] = {
+                "block": (tr.get("block_id") or "").strip(),
+                "headsign": (tr.get("trip_headsign") or "").strip(),
+                "route": (tr.get("route_id") or "").strip(),
+                "first": (first_row.get("stop_id") or "").strip(),
+                "last": (last_row.get("stop_id") or "").strip(),
+                "firstName": (stops.get(first_row.get("stop_id",""), {}).get("stop_name") or "").strip(),
+                "lastName": (stops.get(last_row.get("stop_id",""), {}).get("stop_name") or "").strip(),
+                "start": t0,
+                "end": secs(last_row.get("departure_time") or last_row.get("arrival_time")),
+                "line": line
+            }
             if starts_extra:
                 for s0 in starts_extra:         # frequency-based trips: one run per interval
                     out[line]["trips"].append([s0 + (t0 - trip_t0), p, sid, tid])
@@ -482,7 +499,7 @@ def process(z, data):
         finish(False)
 
     feed = {"source": "LTA DataMall, GTFS Schedule (Train)", "built": time.strftime("%Y-%m-%d", time.gmtime()),
-            "lines": lines_ok}
+            "lines": lines_ok, "depotDetection": "block_id + scheduled continuity heuristic; candidates are not guaranteed non-revenue movements"}
     res = {"feed": feed, "services": services, "except": exc,
            "lines": {ln: out[ln] for ln in lines_ok}}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

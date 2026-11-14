@@ -80,8 +80,15 @@ def finish(ok):
             f.write("## LTA train timetable\n\n" + "\n".join(report) + "\n")
     sys.exit(0)
 
-# ---------- the LTA key (stored scrambled in app/build.gradle) ----------
+# ---------- the LTA key ----------
 def lta_key():
+    # Prefer the GitHub Actions secret so the DataMall credential is not needed in source.
+    env_key = os.environ.get("LTA_ACCOUNT_KEY", "").strip()
+    if env_key:
+        print("::add-mask::" + env_key)
+        return env_key
+
+    # Backward-compatible fallback for builds where the secret is not configured yet.
     g = open(os.path.join(ROOT, "app/build.gradle")).read()
     m = re.search(r"LTA_KEY_X',\s*'\"([0-9a-f]+)\"'", g)
     if not m:

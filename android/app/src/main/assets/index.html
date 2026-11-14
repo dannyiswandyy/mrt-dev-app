@@ -2029,7 +2029,9 @@ function cutTrain(t, c, n){
   return Object.assign({}, t, {dir: nd, idx: p, next, to: nd ? 0 : n - 1, eta: Math.abs(next - p) * 2, atStation: at, turned: turnAt});
 }
 function trainsOn(code, now, noReports){
-  const list = trainsOnRaw(code, now, noReports), cuts = lineCuts(code, now.iso);
+  const list = trainsOnRaw(code, now, noReports);
+  try { if (window.mrtHistoryObserve) window.mrtHistoryObserve(code, now, list); } catch(e) {}
+  const cuts = lineCuts(code, now.iso);
   if (!cuts.length) return list;
   const n = activeStations(LINES[code], now.iso).length, out = [];
   for (let t of list){
@@ -9509,4 +9511,4 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
 
 
 </html>
-<script src="mrt-intelligence.js"></script><script src="depot-transfers.js"></script><script src="engineering-intelligence.js"></script><script src="trainset-intelligence.js"></script>
+<script src="mrt-intelligence.js"></script><script src="depot-transfers.js"></script><script src="engineering-intelligence.js"></script><script src="trainset-intelligence.js"></script><script src="operating-history.js"></script>

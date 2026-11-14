@@ -50,7 +50,8 @@ final class Timetable {
     static final String LTA_FILES_HOST = "dmprod-datasets.s3.ap-southeast-1.amazonaws.com";
     /** How often to look for a new timetable. */
     static final long EVERY_MS = 6L * 60 * 60 * 1000;
-    private static final int JOB_ID = 7301;
+    private static final int JOB_ID = 7302;           // Alerts' background check is 7301
+    private static final int OLD_JOB_ID = 7301;       // what the first version used by mistake
     private static final String FILE = "timetable-live.json";
     private static final Object LOCK = new Object();
     private static volatile boolean running = false;
@@ -117,6 +118,13 @@ final class Timetable {
         try {
             JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null || BuildConfig.LTA_KEY_X.isEmpty()) return;
+            // the first version used the disruption check's job number, which stopped one of the two being scheduled
+            for (JobInfo j : js.getAllPendingJobs()) {
+                if (j.getId() == OLD_JOB_ID && j.getService() != null && j.getService().getClassName().endsWith("TimetableJob")) {
+                    js.cancel(OLD_JOB_ID);
+                    Alerts.schedule(c);
+                }
+            }
             for (JobInfo j : js.getAllPendingJobs()) if (j.getId() == JOB_ID) return;
             js.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(c, TimetableJob.class))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)

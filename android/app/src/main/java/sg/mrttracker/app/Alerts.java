@@ -225,8 +225,14 @@ final class Alerts {
 
     /* ---------- trip reminders (AlarmManager, inexact, no special permission) ---------- */
 
+    /**
+     * [{at, title, text, tid, delay}]: tid is the train (LTA's trip id) and delay how late LTA said it was (seconds)
+     * when the reminder was set. Four minutes before each reminder the app checks LTA's live feed again and moves the
+     * reminder if that train is now later or earlier (TripAlarm), so reminders follow the real train.
+     */
     static void tripSchedule(Context c, String json) {
         tripCancel(c);
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("trip", json).apply();
         try {
             JSONArray a = new JSONArray(json);
             AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
@@ -243,6 +249,11 @@ final class Alerts {
                         .putExtra("id", TRIP_BASE + k);
                 PendingIntent pi = PendingIntent.getBroadcast(c, TRIP_BASE + k, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                if (!o.optString("tid", "").isEmpty() && at - 4 * 60_000 > now + 30_000) {     // a live check first
+                    Intent ck = new Intent(c, TripAlarm.class).setAction(TripAlarm.CHECK + k);
+                    PendingIntent cp = PendingIntent.getBroadcast(c, TRIP_BASE + 100 + k, ck, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at - 4 * 60_000, cp);
+                }
                 k++;
             }
         } catch (Exception ignored) {
@@ -257,6 +268,12 @@ final class Alerts {
             if (pi != null) {
                 if (am != null) am.cancel(pi);
                 pi.cancel();
+            }
+            Intent ck = new Intent(c, TripAlarm.class).setAction(TripAlarm.CHECK + k);
+            PendingIntent cp = PendingIntent.getBroadcast(c, TRIP_BASE + 100 + k, ck, PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
+            if (cp != null) {
+                if (am != null) am.cancel(cp);
+                cp.cancel();
             }
         }
     }

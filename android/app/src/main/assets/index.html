@@ -1041,6 +1041,10 @@ body.on-map .hx-sheet{max-height:58vh}
 .tx-list .code{margin-top:2px}
 .ex-src{font-size:11.5px;color:var(--muted);margin:0;line-height:1.4}
 .hx-crowd{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px}
+.fc{display:grid;gap:6px;font-size:12px}
+.fc-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.fc-iv{display:inline-flex;flex-wrap:wrap;gap:4px}
+.fc-row small{opacity:.7}
 .hx-crowd > span{display:inline-flex;align-items:center;gap:4px}
 .hx-cam{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid var(--rule);border-radius:16px;padding:12px 14px;background:linear-gradient(160deg,#2b3542,#10151c);color:#fff;font:inherit;cursor:pointer}
 .hx-cam .ic{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center}
@@ -5067,6 +5071,57 @@ async function refreshCrowd(force){
     paintCrowd();
   }
 }
+/* ---------- Crowd forecast ----------
+   How busy each station is expected to be in each half hour today, from LTA DataMall's Platform Crowd Density
+   Forecast (PCDForecast), asked for line by line when a station page needs it, at most once a day per line. */
+var PCD_OF = {NSL: "NSL", EWL: "EWL", CG: "CGL", NEL: "NEL", CCL: "CCL", DTL: "DTL", TEL: "TEL", BP: "BPL", SE: "SLRT", SW: "SLRT", PE: "PLRT", PW: "PLRT"};
+var crowdFc = {}, fcBusy = {};
+try { crowdFc = store.get("mrt.crowdFc", {}) || {}; } catch(e){ crowdFc = {}; }
+async function loadForecast(l){
+  const day = sgNow().iso;
+  if (fcBusy[l] || (crowdFc[l] && (crowdFc[l].day === day || Date.now() - crowdFc[l].tried < 30 * 60e3))) return;
+  fcBusy[l] = true;
+  try {
+    const {code, body} = await nativeGet("https://datamall2.mytransport.sg/ltaodataservice/PCDForecast?TrainLine=" + l, true);
+    const st = {};
+    if (code === 200){
+      // {value: [{Date, Stations: [{Station, Interval: [{Start, CrowdLevel}, …]}, …]}]}, looked for anywhere in the answer
+      const walk = o => {
+        if (Array.isArray(o)) return o.forEach(walk);
+        if (!o || typeof o !== "object") return;
+        if (o.Station && Array.isArray(o.Interval)){
+          const c = ({CE1: "CC34", CE2: "CC33"})[o.Station] || String(o.Station).trim();
+          st[c] = o.Interval.map(x => [Date.parse(x.Start), String(x.CrowdLevel || "").trim().toLowerCase()]).filter(x => Number.isFinite(x[0]) && CROWD_RANK[x[1]]).sort((a, b) => a[0] - b[0]);
+          return;
+        }
+        Object.values(o).forEach(walk);
+      };
+      walk(JSON.parse(body));
+    }
+    crowdFc[l] = Object.keys(st).length ? {day, tried: Date.now(), st} : {day: "", tried: Date.now(), st: {}};
+    const keep = {}; for (const k in crowdFc) if (crowdFc[k].day === day) keep[k] = crowdFc[k];   // only today's
+    store.set("mrt.crowdFc", keep);
+  } catch(e){
+    crowdFc[l] = {day: "", tried: Date.now(), st: {}};
+  } finally { fcBusy[l] = false; }
+}
+/* The station page's "Crowd later": the next three hours in half hours, and the quietest of them. */
+function crowdForecastHTML(e){
+  if (!APP || !hasKey() || SIM.crowd) return "";
+  const now = Date.now(), rows = [], seen = new Set();
+  for (const x of e.codes){
+    const l = PCD_OF[x.line]; if (!l || seen.has(x.code)) continue;
+    seen.add(x.code);
+    const f = crowdFc[l];
+    if (!f || f.day !== sgNow().iso){ loadForecast(l); continue; }
+    const iv = (f.st[x.code] || []).filter(([t]) => t + 30 * 60e3 > now).slice(0, 6);
+    if (!iv.length) continue;
+    const quiet = iv.reduce((a, b) => CROWD_RANK[b[1]] < CROWD_RANK[a[1]] ? b : a);
+    const hm = t => new Date(t).toLocaleTimeString("en-SG", {hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore"}).replace(/\s/g, "").replace(":00", "").toLowerCase();
+    rows.push(`<div class="fc-row">${codePills([[x.line, x.code]])}<span class="fc-iv">${iv.map(([t, lv]) => `<span class="cwd ${lv}" title="${esc(CROWD_TEXT[lv])} from ${hm(t)}">${hm(t)}</span>`).join("")}</span>${CROWD_RANK[quiet[1]] < CROWD_RANK[iv[0][1]] ? `<small>quieter from ${hm(quiet[0])}</small>` : ""}</div>`);
+  }
+  return rows.length ? `<div><p class="hsub">Crowd later · LTA forecast</p><div class="fc">${rows.join("")}</div></div>` : "";
+}
 $("mapCrowd").onclick = () => { crowdLayer = !crowdLayer; store.set("mrt.crowdLayer", crowdLayer); paintCrowd(); };
 setInterval(() => { if (!document.hidden) refreshCrowd(); }, 60e3);
 setInterval(paintCrowd, 5 * 60e3);           // drop figures once they're too old
@@ -8872,6 +8927,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
         ${anyDis ? `<p class="hint" style="color:var(--bad)">Disruption on this stretch: times may be later than shown. See Updates for LTA's notice.</p>` : ""}</div>
       ${stationTimesHTML(e, now)}
       <div><p class="hsub">Platform crowd${crowdFresh() ? ` · LTA, ${esc(crowdWindow())}` : ""}</p>${cws ? `<div class="hx-crowd">${cws}</div>` : `<p class="hint" style="margin:0">Crowd levels aren't available right now.</p>`}</div>
+      ${typeof crowdForecastHTML === "function" ? crowdForecastHTML(e) : ""}
       ${typeof wxLine === "function" ? wxLine(e) : ""}`;
   }
   /* First and last trains today, and the special-bound ones, for each line and direction at the station. */
@@ -9215,24 +9271,47 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     if (b.dataset.nt === "ask") call("askNotify"); else call("openNotifySettings");
   });
 
-  /* ===== Trip reminders: from the planned times (the timetable), not from where you are ===== */
+  /* ===== Trip reminders: from the timetable and LTA's live delays (not from where you are) ===== */
   const REM_KEY = "mrt.remind";
   let remind = store.get(REM_KEY, null);
   if (remind && !(remind.end > Date.now())) remind = null;
   let remMsg = "";
   const tripKey = r => r ? r.a + "|" + r.b : "";
+  /* Which train a trip leg boards (LTA's trip id), and how late LTA says it is (seconds): the timetable run that
+     leaves the leg's first station closest to its boarding time, in the direction of its last station. The app
+     then checks that train in LTA's live feed just before each reminder and moves the reminder with it. */
+  function legTrain(l){
+    try {
+      const L = LINES[l.line], now = sgNow(), list = ttTrips(l.line, now.iso); if (!L || !list) return null;
+      const st = L.stations, fr = st.map((s, i) => s[1] === l.from ? i : -1).filter(i => i >= 0), to = st.map((s, i) => s[1] === l.to ? i : -1).filter(i => i >= 0);
+      const mv = moved(l.line, now.iso); let best = null;
+      for (const r of list){
+        const p = r.p;
+        for (const i of fr){
+          const k = (i - p.f) * p.d; if (k < 0 || k >= p.arr.length - 1) continue;
+          if (!to.some(j => { const q = (j - p.f) * p.d; return q > k && q < p.arr.length; })) continue;
+          const dt = Math.abs(ttAt(l.line, r, k, mv) / 60 - l.board);
+          if (dt < 1.5 && (!best || dt < best.dt)) best = {dt, r};
+        }
+      }
+      if (!best || !best.r.tid) return null;
+      let d = 0; try { const u = rtState && rtState.trips && rtState.trips[best.r.tid]; d = u && !u.x ? u.d || 0 : 0; } catch(e){}
+      return {tid: best.r.tid, delay: d};
+    } catch(e){ return null; }
+  }
   function remindPlan(r){
     const nowM = sgNow().mins, t0 = Date.now(), ep = m => Math.round(t0 + (m - nowM) * 60000), out = [];
     const legs = r.legs.filter(l => l.line);
     legs.forEach((l, k) => {
       if (l.wait == null) return;
+      const tr = legTrain(l), tag = tr ? {tid: tr.tid, delay: tr.delay} : {};
       const nx = legs[k + 1], last = k === legs.length - 1, bd = ep(l.board);
       if (bd - 120000 > t0 + 20000) out.push({at: bd - 120000, title: k ? `Change at ${l.from}` : `Your train from ${l.from}`,
-        text: `${lineFull(l.line)} ${towardsW(l.toward)} at ${clockText(l.board)}, in about 2 min.`});
+        text: `${lineFull(l.line)} ${towardsW(l.toward)} at ${clockText(l.board)}, in about 2 min.`, ...tag});
       const per = l.stops > 0 ? l.ride / l.stops : 2;
       const al = Math.max(ep(l.arrive - per), bd + 30000);
       if (al > t0 + 15000) out.push({at: al, title: `Alight at ${l.to} next`,
-        text: `Your train arrives at ${l.to} in 1 stop, about ${clockText(l.arrive)}.${last ? "" : nx ? ` Then change to the ${lineFull(nx.line)} ${towardsW(nx.toward)}.` : ""}`});
+        text: `Your train arrives at ${l.to} in 1 stop, about ${clockText(l.arrive)}.${last ? "" : nx ? ` Then change to the ${lineFull(nx.line)} ${towardsW(nx.toward)}.` : ""}`, ...tag});
     });
     return out.sort((x, y) => x.at - y.at).slice(0, 8);
   }
@@ -9253,7 +9332,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
   };
   window.tripRemindNote = r => {
     const on = remind && remind.key === tripKey(r) && remind.end > Date.now();
-    const t = on ? `Reminders at ${remind.at.map(x => clockText(((x + 8 * 3600e3) % 864e5) / 60000)).join(", ")} · from the planned times, so delays don't show.` : "";
+    const t = on ? `Reminders at ${remind.at.map(x => clockText(((x + 8 * 3600e3) % 864e5) / 60000)).join(", ")} · they follow LTA's live train feed: a few minutes before each one, the app checks your train again and moves the reminder if it's late, even with the app closed.` : "";
     const m = remMsg ? `${remMsg}${nState() === "off" ? ` <button class="btn ghost" type="button" data-nt="settings">Open settings</button>` : ""}` : "";
     return t || m ? `<p class="rt-rem">${t}${t && m ? "<br>" : ""}${m}</p>` : "";
   };

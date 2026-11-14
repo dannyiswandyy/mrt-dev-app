@@ -2985,8 +2985,8 @@ function exitsData(){
       list.sort((a, b) => (a.label === "") - (b.label === "") || a.label.localeCompare(b.label, "en", {numeric: true}));
       if (list.length) byStation[e.name] = list;
     }
-    EXITS = {at: j.at, src: j.src, byStation, all: Object.entries(byStation).flatMap(([name, l]) => l.map(x => Object.assign({name}, x)))};
-  } catch(e){ EXITS = {at: "", src: "", byStation: {}, all: []}; }
+    EXITS = {at: j.at, src: j.src, exsrc: j.exsrc || "OpenStreetMap", byStation, all: Object.entries(byStation).flatMap(([name, l]) => l.map(x => Object.assign({name}, x)))};
+  } catch(e){ EXITS = {at: "", src: "", exsrc: "", byStation: {}, all: []}; }
   exRaw = null;
   return EXITS;
 }
@@ -8279,7 +8279,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       : `<span class="muted">No named places mapped next to this exit</span>`}</span></li>`).join("");
     return `<div class="ex-sec"><p class="hsub">Exits</p><ul class="ex-list">${rows}</ul>
       <div class="mi-act"><button class="btn ghost" type="button" data-hx="exmap">Show exits on map</button></div>
-      <p class="ex-src">Exits and nearby places: © OpenStreetMap contributors${D && D.at ? `, ${esc(D.at)}` : ""}. Each place is listed under its nearest exit, which may not match the station's own signs.</p></div>`;
+      <p class="ex-src">${D && D.exsrc && D.exsrc !== "OpenStreetMap" ? `Exits: Land Transport Authority (${esc(D.exsrc)}). Nearby places` : "Exits and nearby places"}: © OpenStreetMap contributors${D && D.at ? `, ${esc(D.at)}` : ""}. Each place is listed under its nearest exit, which may not match the station's own signs.</p></div>`;
   }
   /* Changing lines here: which lines you can change to, and where their trains go. */
   const XPLAT = {"Jurong East": "NSL and EWL", "City Hall": "NSL and EWL", "Raffles Place": "NSL and EWL"};

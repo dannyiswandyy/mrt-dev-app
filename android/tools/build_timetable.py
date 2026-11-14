@@ -16,7 +16,7 @@ timetable.json:
   services: [[service_id, "1111100" (Mon..Sun), start "YYYYMMDD", end "YYYYMMDD"], ...]
   except:   {"YYYYMMDD": [[service index, 1 = added | 2 = removed], ...]}
   lines:    {NSL: {pats: [[first station index, step +1/-1, [arrive s], [depart s], destination index], ...],
-                   trips: [[start s since midnight, pattern index, service index], ...]}, ...}
+                   trips: [[start s since midnight, pattern index, service index, LTA trip id], ...]}, ...}
             The destination is the station the trip is headed for (its headsign), so special-bound trains
             that end partway along the line show where they end; -1 when it's simply where the run ends,
             -2 for a full loop back to where it started.
@@ -448,9 +448,9 @@ def process(z, data):
             p = pat_idx[line][key]
             if starts_extra:
                 for s0 in starts_extra:         # frequency-based trips: one run per interval
-                    out[line]["trips"].append([s0 + (t0 - trip_t0), p, sid])
+                    out[line]["trips"].append([s0 + (t0 - trip_t0), p, sid, tid])
             else:
-                out[line]["trips"].append([t0, p, sid])
+                out[line]["trips"].append([t0, p, sid, tid])   # LTA's trip id: lets the app match LTA's live updates (GTFS Realtime)
             per_line[line] += 1
 
     for ln in out:

@@ -1838,15 +1838,16 @@ const camAdj = (code, dir) => { try { return code === "NSL" && window.spotOffset
 /* Trains a spotter saw somewhere else than the app had them: train id -> minutes to move them by. */
 const movedMix = {};
 const moved = (code, iso) => {
-  let a = null, b = null;
+  let r = null, a = null, b = null;
+  try { r = window.rtShifts ? window.rtShifts(code, iso) : null; } catch(e){ r = null; }        // LTA's live delays (GTFS Realtime)
   try { a = window.repShifts ? window.repShifts(code, iso) : null; } catch(e){ a = null; }
   try { b = window.spotShifts ? window.spotShifts(code, iso) : null; } catch(e){ b = null; }   // trains you logged, put where you saw them
-  if (!b || !b.size) return a;
-  if (!a || !a.size) return b;
+  const maps = [r, a, b].filter(x => x && x.size);
+  if (maps.length < 2) return maps[0] || a;
   const c = movedMix[code];
-  if (c && c.a === a && c.b === b) return c.m;                       // both maps are cached, so this is once per change
-  const m = new Map(a); for (const [k, v] of b) m.set(k, v);
-  movedMix[code] = {a, b, m};
+  if (c && c.r === r && c.a === a && c.b === b) return c.m;           // the maps are cached, so this is once per change
+  const m = new Map(); for (const x of maps) for (const [k, v] of x) m.set(k, v);   // later ones win: what people saw beats LTA's estimate
+  movedMix[code] = {r, a, b, m};
   return m;
 };
 /* When trains are out on a line that day (estimates): from the first one leaving to the last one arriving. */
@@ -2021,7 +2022,7 @@ function ttTrips(code, iso){
   const k = code + iso;
   if (ttDayCache[k]) return ttDayCache[k];
   const on = ttServices(iso), Ln = TT.lines[code];
-  let list = Ln.trips.filter(t => on.has(t[2])).map(t => ({s: t[0], p: Ln.P[t[1]], pi: t[1]}));
+  let list = Ln.trips.filter(t => on.has(t[2])).map(t => ({s: t[0], p: Ln.P[t[1]], pi: t[1], tid: t[3]}));
   if (list.length && EXT_LAST[iso] && EXT_LAST[iso][code]) list = ttExtend(code, iso, list, EXT_LAST[iso][code]);
   list.code = code;                                          // which line, for the Live cam's corrections
   return ttDayCache[k] = list.length ? list : null;
@@ -2540,7 +2541,112 @@ async function refreshAll(){
   loading = false;
   renderAll();
 }
-window.appResume = () => refreshAll();     // called by the app every time it is opened
+window.appResume = () => { refreshAll(); rtRefresh(); };     // called by the app every time it is opened
+
+/* ---------- LTA's live train feeds (GTFS Realtime, from LTA DataMall) ----------
+   Trip updates: trains LTA reports as late, early or cancelled, matched to the timetable by LTA's own
+   trip ids, then moved on the map and in arrival times like any other correction. Service alerts:
+   shown on the Updates tab. The feeds only list trains and alerts when there's something to say,
+   so most of the time they're empty and nothing changes. Checked every minute while the app is open. */
+let rtState = store.get("mrt.rt", null);      // {at, feedAt, trips: {tripId: {d: delay s, x: cancelled}}, alerts: [...], err}
+const RT_EVERY = 60e3;
+function pbFields(b){                         // protocol buffers: {field: [values]}; varints as BigInt, bytes as Uint8Array
+  const out = {}; let i = 0;
+  const vint = () => { let x = 0n, s = 0n, c; do { c = b[i++]; x |= BigInt(c & 127) << s; s += 7n; } while (c & 128 && i < b.length); return x; };
+  while (i < b.length){
+    const key = vint(), f = Number(key >> 3n), w = Number(key & 7n);
+    let v;
+    if (w === 0) v = vint();
+    else if (w === 2){ const n = Number(vint()); v = b.subarray(i, i + n); i += n; }
+    else if (w === 1){ i += 8; continue; }
+    else if (w === 5){ i += 4; continue; }
+    else break;
+    (out[f] ||= []).push(v);
+  }
+  return out;
+}
+const pbStr = v => v ? new TextDecoder().decode(v) : "";
+const pbInt = v => v == null ? null : Number(BigInt.asIntN(64, v));
+const pbText = v => { if (!v) return ""; const t = (pbFields(v)[1] || []).map(pbFields); const en = t.find(x => /^en/i.test(pbStr((x[2] || [])[0]))) || t[0]; return en ? pbStr((en[1] || [])[0]) : ""; };
+function rtParse(b64, kind){
+  const bin = atob(b64), b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  const feed = pbFields(b), head = feed[1] ? pbFields(feed[1][0]) : {};
+  const res = {feedAt: head[3] ? pbInt(head[3][0]) * 1000 : 0, trips: {}, alerts: []};
+  for (const raw of feed[2] || []){
+    const e = pbFields(raw);
+    if (kind === "trips" && e[3]){
+      const tu = pbFields(e[3][0]), trip = tu[1] ? pbFields(tu[1][0]) : {}, id = pbStr((trip[1] || [])[0]);
+      if (!id) continue;
+      const rel = trip[4] ? pbInt(trip[4][0]) : 0;            // 3 = cancelled
+      let d = tu[5] ? pbInt(tu[5][0]) : null;
+      for (const s of tu[2] || []){                             // the first stop with a delay
+        const u = pbFields(s);
+        for (const ev of [u[2], u[3]]) if (d == null && ev){ const x = pbFields(ev[0]); if (x[1]) d = pbInt(x[1][0]); }
+        if (d != null) break;
+      }
+      res.trips[id] = {d: d || 0, x: rel === 3 ? 1 : 0, route: pbStr((trip[5] || [])[0])};
+    }
+    if (kind === "alerts" && e[5]){
+      const a = pbFields(e[5][0]);
+      const per = (a[1] || []).map(x => { const p = pbFields(x); return [p[1] ? pbInt(p[1][0]) * 1000 : 0, p[2] ? pbInt(p[2][0]) * 1000 : 0]; });
+      const ents = (a[5] || []).map(pbFields);
+      res.alerts.push({head: pbText((a[10] || [])[0]), text: pbText((a[11] || [])[0]), per,
+        routes: [...new Set(ents.map(x => pbStr((x[2] || [])[0])).filter(Boolean))],
+        stops: [...new Set(ents.map(x => pbStr((x[5] || [])[0])).filter(Boolean))]});
+    }
+  }
+  return res;
+}
+function rtGet(kind){
+  return new Promise(res => { const id = "r" + (++reqId); pending[id] = (code, body) => res({code, body}); APP.gtfsRealtime(id, kind); });
+}
+let rtBusy = false, rtLast = 0;
+async function rtRefresh(){
+  if (!APP || !APP.gtfsRealtime || !hasKey() || rtBusy || document.hidden) return;
+  rtBusy = true; rtLast = Date.now();
+  const st = {at: Date.now(), feedAt: 0, trips: {}, alerts: [], err: ""};
+  for (const kind of ["trips", "alerts"]){
+    const {code, body} = await rtGet(kind);
+    if (code === 200 && body){
+      try { const r = rtParse(body, kind); st.feedAt = Math.max(st.feedAt, r.feedAt); Object.assign(st.trips, r.trips); st.alerts.push(...r.alerts); }
+      catch(e){ st.err = "LTA's live feed couldn't be read."; }
+    } else st.err = code ? `LTA's live feed returned an error (${code}).` : "Couldn't reach LTA's live feed.";
+  }
+  rtBusy = false;
+  const now = Date.now();
+  st.alerts = st.alerts.filter(a => !a.per.length || a.per.some(([s, e]) => (!s || s <= now) && (!e || e >= now)));
+  const changed = !rtState || JSON.stringify([rtState.trips, rtState.alerts]) !== JSON.stringify([st.trips, st.alerts]);
+  rtState = st; store.set("mrt.rt", st);
+  if (changed){ for (const k in rtMapCache) delete rtMapCache[k]; for (const k in movedMix) delete movedMix[k]; mDirty = true; }
+  renderUpdates();
+}
+setInterval(() => { if (Date.now() - rtLast >= RT_EVERY - 1000) rtRefresh(); }, 15e3);
+/* LTA's delays as minutes to move each of today's timetable runs by (cancelled: never shown). */
+const rtMapCache = {};
+window.rtShifts = (code, iso) => {
+  if (!rtState || !rtState.trips || Date.now() - rtState.at > 10 * 60e3) return null;     // older than 10 minutes: ignore
+  const k = code + iso; if (rtMapCache[k] !== undefined) return rtMapCache[k];
+  const list = ttTrips(code, iso), m = new Map();
+  if (list) for (const r of list){
+    const u = r.tid && rtState.trips[r.tid];
+    if (u && (u.x || u.d) && !m.has(`${code}t${r.s}p${r.pi}`)) m.set(`${code}t${r.s}p${r.pi}`, u.x ? 1e6 : u.d / 60);
+  }
+  return rtMapCache[k] = m.size ? m : null;
+};
+/* For a train's card: what LTA's live feed says about it. */
+window.rtTrainNote = (code, t) => {
+  const m = window.rtShifts(code, sgNow().iso), v = m && t && m.get(t.id);
+  if (v == null || Math.abs(v) < 0.5) return "";
+  return `<p class="hint" style="margin:0"><b>${v > 0 ? `Running about ${Math.round(v)} min late` : `Running about ${Math.round(-v)} min early`}</b>, by LTA's live train feed. Its place on the map and its arrival times allow for this.</p>`;
+};
+function rtHTML(){
+  if (!APP || !APP.gtfsRealtime || !hasKey()) return "";
+  if (!rtState) return `<p class="muted">LTA live train feed: checking…</p>`;
+  const n = Object.values(rtState.trips || {}).filter(u => u.x || Math.abs(u.d) >= 30).length;
+  const al = (rtState.alerts || []).map(a => `<li><b>${esc(a.head || "Service alert")}</b>${a.text ? `<br><span class="muted">${esc(a.text)}</span>` : ""}${a.routes.length ? `<br><span class="muted">${esc(a.routes.join(", "))}</span>` : ""}</li>`).join("");
+  return `<div style="display:grid;gap:6px"><p class="muted" style="margin:0">LTA live train feed (GTFS Realtime): ${rtState.err ? esc(rtState.err) : n ? `${n} train run${n > 1 ? "s" : ""} listed as late, early or cancelled; the map and arrival times allow for them` : "no delays or cancellations listed right now"} · checked ${hhmm(rtState.at)}</p>
+    ${al ? `<ul class="msgs">${al}</ul>` : ""}</div>`;
+}
 
 /* ---------- In-app updates ----------
    The app checks GitHub for a newer version when it opens; these show the banner and progress. */
@@ -2629,7 +2735,7 @@ function renderOfficial(){
     body = `<p><b style="color:var(--good)">All train services are running normally.</b></p>${msgsHTML(alertState.messages)}`;
   } else body = `<p class="muted">${loading ? "Loading…" : "No status yet."}</p>`;
   const meta = APP && hasKey() ? `<p class="muted">${alertState ? `Updated ${hhmm(alertState.at)}` : ""}${alertError ? ` · ${esc(alertError)}` : ""}</p>` : "";
-  el.innerHTML = `<h2>LTA service status</h2><div style="display:grid;gap:10px">${body}${meta}<p class="muted">Source: Land Transport Authority (LTA), datamall.lta.gov.sg</p>${APP && hasKey() ? `<div>${refreshBtn}</div>` : ""}</div>`;
+  el.innerHTML = `<h2>LTA service status</h2><div style="display:grid;gap:10px">${body}${meta}${rtHTML()}<p class="muted">Source: Land Transport Authority (LTA), datamall.lta.gov.sg</p>${APP && hasKey() ? `<div>${refreshBtn}</div>` : ""}</div>`;
   const r = $("refreshBtn"); if (r) r.onclick = refreshAll;
 }
 
@@ -8326,6 +8432,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
         <div><span>Ends at</span><b>${esc(to)}</b><small>${sb ? "special-bound" : "runs the whole way"}</small></div>
       </div>
       ${window.spotTagHTML ? spotTagHTML(x.line, t, T.now.iso) : ""}
+      ${window.rtTrainNote ? rtTrainNote(x.line, t) : ""}
       ${sb ? `<p class="hint" style="margin:0">This train ends at <b>${esc(to)}</b> instead of going all the way to ${esc(full)}. On the map it's drawn hollow.</p>` : ""}`;
   }
   function trainStatic(x){

@@ -742,6 +742,12 @@ public class MainActivity extends Activity {
             return online;
         }
 
+        /** LTA's live train feeds (GTFS Realtime), kind "trips" or "alerts"; the answer comes back through window.__native as base64. */
+        @JavascriptInterface
+        public void gtfsRealtime(final String id, final String kind) {
+            gtfsRealtimeFetch(id, kind);
+        }
+
         @JavascriptInterface
         public void fetch(final String id, final String url, final boolean withKey) {
             new Thread(() -> {
@@ -902,6 +908,55 @@ public class MainActivity extends Activity {
     }
 
 
+
+    /**
+     * LTA's live train feeds (GTFS Realtime): "trips" (delays and cancellations) or "alerts" (service alerts).
+     * Asks LTA for the temporary link, downloads the feed and hands it to the page as base64.
+     */
+    void gtfsRealtimeFetch(final String id, final String kind) {
+        new Thread(() -> {
+            int code = 0;
+            String body = "";
+            try {
+                if (ltaKey().isEmpty()) throw new java.io.IOException("no key");
+                String ep = "alerts".equals(kind) ? "GTFSRealTimeTrainServiceAlerts" : "GTFSRealtimeTrainTripUpdates";
+                HttpURLConnection c = open("https://datamall2.mytransport.sg/ltaodataservice/" + ep, true);
+                int status = c.getResponseCode();
+                if (status != 200) { c.disconnect(); code = status; throw new java.io.IOException("LTA returned " + status); }
+                String json = readAll(c.getInputStream());
+                c.disconnect();
+                JSONObject root = new JSONObject(json);
+                Object v = root.opt("value");
+                JSONObject item = v instanceof org.json.JSONArray ? ((org.json.JSONArray) v).getJSONObject(0)
+                        : v instanceof JSONObject ? (JSONObject) v : root;
+                URL lu = new URL(item.optString("link", item.optString("Link", "")));
+                if (!"https".equals(lu.getProtocol()) || !LTA_FILES_HOST.equals(lu.getHost())) throw new java.io.IOException("Unexpected link");
+                HttpURLConnection d = (HttpURLConnection) lu.openConnection();
+                d.setConnectTimeout(10000);
+                d.setReadTimeout(20000);
+                code = d.getResponseCode();
+                if (code == 200) {
+                    java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                    try (InputStream in = d.getInputStream()) {
+                        byte[] buf = new byte[16384];
+                        int n, total = 0;
+                        while ((n = in.read(buf)) > 0) {
+                            total += n;
+                            if (total > 8 * 1024 * 1024) throw new java.io.IOException("Feed too large");
+                            bo.write(buf, 0, n);
+                        }
+                    }
+                    body = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                }
+                d.disconnect();
+            } catch (Exception e) {
+                if (code == 200) code = 0;
+                body = "";
+            }
+            final String js = "window.__native(" + JSONObject.quote(id) + "," + code + "," + JSONObject.quote(body) + ")";
+            runOnUiThread(() -> web.evaluateJavascript(js, null));
+        }).start();
+    }
 
     private HttpURLConnection open(String url, boolean withKey) throws java.io.IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();

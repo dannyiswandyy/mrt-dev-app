@@ -31,9 +31,9 @@ ENDPOINTS = [u for u in os.environ.get("OVERPASS_URLS", "").split() if u] or [
 RADIUS = 350          # exits are looked for within this many metres of a station
 PLACE_R = 200         # a place counts as "near" an exit within this many metres of it
 PER_EXIT = 4
-BATCH = 15            # stations per Overpass request
+BBOX = "1.15,103.59,1.48,104.10"   # all of Singapore (south, west, north, east)
 MAX_AGE_DAYS = 30
-DEADLINE = time.time() + float(os.environ.get("EXITS_MAX_SECONDS", 5 * 60))
+DEADLINE = time.time() + float(os.environ.get("EXITS_MAX_SECONDS", 8 * 60))
 # Same projection as the map (build_map.py): metres east and south of central Singapore.
 LAT0, LON0 = 1.3521, 103.8198
 KX, KY = 111320 * math.cos(math.radians(LAT0)), 110574
@@ -85,17 +85,8 @@ def to_latlon(x, y):
 def to_xy(lat, lon):
     return (lon - LON0) * KX, -(lat - LAT0) * KY
 
-def overpass(points):
-    parts = []
-    for x, y in points:
-        lat, lon = to_latlon(x, y)
-        a = f"(around:{RADIUS},{lat:.6f},{lon:.6f})"
-        b = f"(around:{RADIUS + PLACE_R},{lat:.6f},{lon:.6f})"
-        parts.append(f'node["railway"~"^(subway_entrance|train_station_entrance)$"]{a};')
-        for k in sorted({k for k, _, _ in KINDS}):
-            vals = "|".join(sorted({v for kk, v, _ in KINDS if kk == k}))
-            parts.append(f'nwr["{k}"~"^({vals})$"]["name"]{b};')
-    query = f"[out:json][timeout:180];({''.join(parts)});out tags center qt;"
+def ask(query, what):
+    """One Overpass request, trying each server in turn."""
     data = urllib.parse.urlencode({"data": query}).encode()
     last = None
     for attempt in range(2):
@@ -105,15 +96,28 @@ def overpass(points):
                 raise RuntimeError("out of time")
             try:
                 req = urllib.request.Request(url, data=data, headers={"User-Agent": "MRTTracker-build/1.0 (GitHub Actions; station exits)"})
-                with urllib.request.urlopen(req, timeout=min(200, left)) as r:
+                with urllib.request.urlopen(req, timeout=min(240, left)) as r:
                     j = json.loads(r.read().decode("utf-8"))
                 if "elements" in j and not j.get("remark", "").lower().startswith("runtime error"):
                     return j["elements"]
                 last = j.get("remark", "no elements")
             except Exception as e:
                 last = f"{type(e).__name__}: {e}"
+            say(f"  {what}: {url.split('/')[2]} didn't answer ({last}); trying the next one.")
             time.sleep(3 + attempt * 7)
     raise RuntimeError(last)
+
+def overpass_entrances():
+    """Every station entrance in Singapore: a small, quick request."""
+    return ask(f'[out:json][timeout:120];node["railway"~"^(subway_entrance|train_station_entrance)$"]({BBOX});out tags qt;', "Exits")
+
+def overpass_places():
+    """Named places of the kinds in KINDS across Singapore, as single points (centres for areas)."""
+    parts = []
+    for k in sorted({k for k, _, _ in KINDS}):
+        vals = "|".join(sorted({v for kk, v, _ in KINDS if kk == k}))
+        parts.append(f'nwr["{k}"~"^({vals})$"]["name"]({BBOX});')
+    return ask(f"[out:json][timeout:240];({''.join(parts)});out tags center qt;", "Places")
 
 def exit_label(tags):
     """The exit's letter or number as signed at the station: "A", "B2", "3"…"""
@@ -169,11 +173,16 @@ def pack(elements, st):
             uniq.append(ex)
         by_code[c] = uniq
     # each place goes under the exit nearest to it (across all stations), if it's close enough
-    allx = [ex for lst in by_code.values() for ex in lst]
+    grid = {}
+    for lst in by_code.values():
+        for ex in lst:
+            grid.setdefault((int(ex["x"] // PLACE_R), int(ex["y"] // PLACE_R)), []).append(ex)
     for r, x, y, name, what in places:
-        if not allx:
-            break
-        ex, d = min(((ex, math.hypot(ex["x"] - x, ex["y"] - y)) for ex in allx), key=lambda t: t[1])
+        gx, gy = int(x // PLACE_R), int(y // PLACE_R)
+        near = [ex for i in (-1, 0, 1) for j in (-1, 0, 1) for ex in grid.get((gx + i, gy + j), [])]
+        if not near:
+            continue
+        ex, d = min(((ex, math.hypot(ex["x"] - x, ex["y"] - y)) for ex in near), key=lambda t: t[1])
         if d <= PLACE_R:
             ex["near"].append((r, d, name, what))
     out = {}
@@ -215,25 +224,25 @@ def main():
         if age < MAX_AGE_DAYS:
             use(cached, "✅ Using the saved copy")
             return
-    say(f"Downloading station exits and nearby places for {len(pts)} station areas from OpenStreetMap…")
-    elements, failed, in_a_row = [], 0, 0
-    parts = math.ceil(len(pts) / BATCH)
-    for n, i in enumerate(range(0, len(pts), BATCH)):
-        if in_a_row >= 2 or time.time() > DEADLINE:
-            failed += parts - n
-            say("⚠️ OpenStreetMap isn't answering, so the rest was skipped.")
-            break
-        try:
-            elements += overpass(pts[i:i + BATCH])
-            in_a_row = 0
-        except Exception as e:
-            failed += 1
-            in_a_row += 1
-            say(f"⚠️ Part {n + 1} of {parts} didn't download ({e}).")
-        time.sleep(2)
-    if failed and old:
-        use(cached, f"⚠️ {failed} of {parts} parts didn't download, so the app keeps the saved copy")
+    say(f"Downloading station exits and nearby places across Singapore from OpenStreetMap ({len(pts)} station areas)…")
+    failed = 0
+    try:
+        elements = overpass_entrances()
+    except Exception as e:
+        say(f"⚠️ The exits didn't download ({e}).")
+        if old:
+            use(cached, "⚠️ Keeping the saved copy")
+        else:
+            say("Station pages will have no exits this time.")
         return
+    try:
+        elements += overpass_places()
+    except Exception as e:
+        failed = 1
+        say(f"⚠️ The nearby places didn't download ({e}).")
+        if old:
+            use(cached, "⚠️ Keeping the saved copy")
+            return
     x = pack(elements, st)
     if not x:
         say("⚠️ No exits came back, so station pages will have no exits this time.")
@@ -253,7 +262,7 @@ def main():
     no_label = sum(1 for v in x.values() for r in v if not r[0])
     say(f"✅ {n_ex:,} exits at {len(x)} stations, with {n_pl:,} nearby places ({os.path.getsize(OUT) / 1e3:.0f} KB)"
         + (f"; {no_label} exits have no letter in OpenStreetMap" if no_label else "")
-        + (f"; {failed} of {parts} parts missing, so some stations have no exits." if failed else "."))
+        + ("; the nearby places are missing this time." if failed else "."))
 
 if __name__ == "__main__":
     try:

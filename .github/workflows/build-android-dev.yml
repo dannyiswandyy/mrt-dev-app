@@ -2998,6 +2998,22 @@ jobs:
                   print(s)
           PY
 
+          # DEV spotting-log diagnostics: identify the manual train log controls/state.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          h=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
+          print('--- SPOT IDS ---')
+          for m in re.finditer(r'id=["\']([^"\']*(?:spot|log|sight|train)[^"\']*)["\']',h,re.I):
+              print(h[max(0,m.start()-180):min(len(h),m.end()+260)].replace('\\n',' '))
+          print('--- SPOT/TRAIN FUNCTION NAMES ---')
+          for m in re.finditer(r'(?:function|window\.)([A-Za-z_$][\\w$]*(?:spot|log|sight|train)[A-Za-z_$]*)',h,re.I):
+              print(m.group(1))
+          print('--- MANUAL-LOOKING TEXT ---')
+          for m in re.finditer(r'.{0,180}(?:log spotting|spotting log|log a train|logged|sighting|seen at|at station|train id).{0,300}',h,re.I|re.S):
+              print(m.group(0).replace('\\n',' ')[:700])
+          PY
+
           # Mobile map paint guard: the restored page already has the real train-position
           # renderer, but WebView resume/layout can leave the canvas dirty without a repaint.
           # Repaint after layout/resume so train arrows, map count and map overlays stay visible.

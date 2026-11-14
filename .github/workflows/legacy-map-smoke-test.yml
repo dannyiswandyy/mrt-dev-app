@@ -19,19 +19,9 @@ jobs:
       - name: Extract embedded app page
         run: |
           python3 - <<'PY'
-          import base64, gzip, pathlib, re
-          src = pathlib.Path(".github/workflows/build-android-dev.yml").read_text()
-          match = re.search(
-              r"base64 -d <<'MRTAPP_EOF' \| gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'\n(.*?)\n          MRTAPP_EOF",
-              src, re.S
-          )
-          if not match:
-              raise SystemExit("Embedded gzip/base64 index.html block not found.")
-          body = "\n".join(
-              line[10:] if line.startswith("          ") else line
-              for line in match.group(1).splitlines()
-          )
-          html = gzip.decompress(base64.b64decode(body)).decode("utf-8")
+          import base64, gzip, pathlib
+          raw = pathlib.Path("data/mrt-dev-page.b64").read_text()
+          html = gzip.decompress(base64.b64decode(raw)).decode("utf-8")
           pathlib.Path("/tmp/index.html").write_text(html)
           print(f"Extracted index.html: {len(html):,} bytes")
           if len(html) < 100_000:

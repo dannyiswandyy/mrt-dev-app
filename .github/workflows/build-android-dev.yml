@@ -3429,6 +3429,16 @@ jobs:
               i=h.lower().rfind('</body>')
               h=h[:i]+tag+'\n'+h[i:] if i>=0 else h+tag
               p.write_text(h,encoding='utf-8')
+          # TEMP diagnostics: expose the existing timetable function signatures before integration.
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          h=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
+          for name in ['trainsOn','nextArrivals','lineCuts','cutTrain']:
+              for m in re.finditer(r'(?:function\\s+|(?:const|let|var)\\s+)'+re.escape(name)+r'\\s*(?:=\\s*)?\\([^)]*\\)',h):
+                  print('FUNC',m.group(0))
+                  print(h[max(0,m.start()-500):min(len(h),m.start()+2500)])
+          PY
           PY
 
       - uses: actions/setup-java@v4

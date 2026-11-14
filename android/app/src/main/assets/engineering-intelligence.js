@@ -43,6 +43,16 @@
   function candidates(code, iso){
     if (typeof ttTrips !== "function") return [];
     const list = ttTrips(code, iso) || [];
+    const byBlock = new Map();
+    for (const r of list){
+      const tm = tripMeta(code, r.tid);
+      if (!tm) continue;
+      const start = Number(tm.start), end = Number(tm.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      const block = String(tm.block || "");
+      if (block){ if(!byBlock.has(block)) byBlock.set(block,[]); byBlock.get(block).push({r,tm,start,end}); }
+    }
+    for(const a of byBlock.values()) a.sort((x,y)=>x.start-y.start);
     const out = [];
     for (const r of list){
       const tm = tripMeta(code, r.tid);
@@ -51,18 +61,33 @@
       if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
       const endM = ((end/60)%1440+1440)%1440;
       const startM = ((start/60)%1440+1440)%1440;
-      // Trips finishing in the overnight engineering envelope are the useful
-      // candidates. The block/continuity test below decides whether they look
-      // like a withdrawal rather than an ordinary passenger turn.
-      if (endM >= WIN_START && endM < WIN_END){
-        const dep = window.mrtDepotTransferFor ? window.mrtDepotTransferFor(code,{ref:{tid:r.tid}}) : null;
-        out.push({tid:r.tid,start,end,startM,endM,firstName:tm.firstName||"",lastName:tm.lastName||"",block:tm.block||"",depot:dep||null});
+      const dep = window.mrtDepotTransferFor ? mrtDepotTransferFor(code,{ref:{tid:r.tid}}) : null;
+      const block = String(tm.block || "");
+      const seq = block && byBlock.get(block) ? byBlock.get(block) : [];
+      const ix = seq.findIndex(x=>x.r.tid===r.tid);
+      const isLastBlockTrip = ix >= 0 && ix === seq.length-1;
+      const isFirstBlockTrip = ix === 0;
+      // A trip ending in the overnight engineering envelope and being the
+      // last scheduled passenger trip in its block is a strong withdrawal
+      // candidate. If the existing depot heuristic agrees, confidence rises.
+      if (endM >= WIN_START && endM < WIN_END && isLastBlockTrip){
+        out.push({tid:r.tid,start,end,startM,endM,firstName:tm.firstName||"",lastName:tm.lastName||"",block,
+          depot:dep||null,afterService:true,
+          confidence:dep ? Math.min(97,Number(dep.confidence||70)+3) : (DEPOT_NAMES[code]||[]).includes(tm.lastName||"") ? 88 : 68});
       }
-      // A first passenger trip in the engineering envelope can indicate a
-      // pre-service depot launch when the existing block heuristic supports it.
-      if (startM >= WIN_START && startM < WIN_END){
-        const dep = window.mrtDepotTransferFor ? window.mrtDepotTransferFor(code,{ref:{tid:r.tid}}) : null;
-        if (dep && dep.type === "depot_departure") out.push({tid:r.tid,start,end,startM,endM,firstName:tm.firstName||"",lastName:tm.lastName||"",block:tm.block||"",depot:dep,preService:true});
+      // Existing continuity heuristic can identify a depot return even when
+      // the final trip isn't literally the last block record.
+      if (dep && dep.type === "depot_return" && endM >= WIN_START && endM < WIN_END){
+        out.push({tid:r.tid,start,end,startM,endM,firstName:tm.firstName||"",lastName:tm.lastName||"",block,depot:dep,afterService:true,confidence:Number(dep.confidence||70)});
+      }
+      // First passenger trip in the engineering envelope can indicate a
+      // pre-service depot launch. Prefer the existing depot heuristic, but
+      // allow a first-block trip from a depot-adjacent station as a weaker cue.
+      if (startM >= WIN_START && startM < WIN_END && isFirstBlockTrip){
+        if ((dep && dep.type === "depot_departure") || (DEPOT_NAMES[code]||[]).includes(tm.firstName||"")){
+          out.push({tid:r.tid,start,end,startM,endM,firstName:tm.firstName||"",lastName:tm.lastName||"",block,
+            depot:dep||null,preService:true,confidence:dep ? Number(dep.confidence||70) : 78});
+        }
       }
     }
     return out;

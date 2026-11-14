@@ -8661,7 +8661,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const block = tm && tm.block ? String(tm.block) : "";
     const eta = t.atStation ? "Boarding now" : t.eta < 0.5 ? "Arriving" : `In about ${Math.max(1, Math.round(t.eta))} min`;
     return `<div class="tsum" style="--c:var(--${x.line})">${trainSVG(t.dir)}<div><b>${t.atStation ? "Now at" : "Next stop"} ${esc(stop)}</b><br><span class="sub">${eta}${window.repWhen && repWhen(t) ? ` · ${repWhen(t)}` : ""}</span></div></div>
-      ${(slot || tripId) ? `<p class="hint" style="margin:0">${slot ? `<b>Train slot</b> ${esc(slot)}` : ""}${slot && tripId ? " · " : ""}${tripId ? `<b>Trip</b> ${esc(tripId)}` : ""}${block ? ` · <b>Block</b> ${esc(block)}` : ""}</p>` : ""}
+      ${slot ? `<p class="hint" style="margin:0"><b>Train slot</b> ${esc(slot)}</p>` : ""}
       ${depot ? `<p class="hint" style="margin:0"><span class="sb">${esc(depot.kind)}</span> at ${esc(depot.station)} · scheduled gap ${Math.round(depot.gapSec/60)} min · confidence ${depot.confidence}%</p>` : ""}
       <div class="hfacts">
         <div><span>Bound</span><b>${esc(full)}</b><small>direction of travel</small></div>

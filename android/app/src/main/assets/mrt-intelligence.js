@@ -1,5 +1,5 @@
 (()=>{"use strict";
-const K="mrt-intelligence-v3",S={anchors:{},observations:[],journeys:[],graph:{},timetable:null,loadedAt:0};
+const K="mrt-intelligence-v4",S={anchors:{},observations:[],journeys:[],graph:{},timetable:null,loadedAt:0};
 const id=x=>String(x||"").trim().toUpperCase().replace(/\s+/g,"");
 const sn=x=>String(x||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
 const min=x=>{let m=String(x||"").match(/(\d{1,2}):(\d{2})/);return m?+m[1]*60+ +m[2]:null};
@@ -42,7 +42,19 @@ function exactTrips(line,date){
  }
  return out;
 }
-function stationIndex(line,station){let L=S.timetable?.lines?.[line];if(!L)return null;let q=sn(station);for(const j of S.journeys){if(id(j.line)!=id(line))continue;for(let i=0;i<j.stops.length;i++)if(sn(j.stops[i].name||j.stops[i].id)===q)return j.stops[i].index??i}return null}
+function stationIndex(line,station){
+ let q=sn(station);
+ try{
+  const A=window.LINES?.[line]?.stations||[];
+  for(let i=0;i<A.length;i++)if(q===sn(A[i]?.[0])||q===sn(A[i]?.[1]))return i;
+ }catch(_){}
+ let L=S.timetable?.lines?.[line];if(!L)return null;
+ for(const j of S.journeys){
+  if(id(j.line)!==id(line))continue;
+  for(let i=0;i<j.stops.length;i++)if(sn(j.stops[i].name||j.stops[i].id)===q)return j.stops[i].index??i;
+ }
+ return null;
+}
 function scheduled(line,station,date=new Date(),nowSec=null){
  let trips=exactTrips(line,date),idx=stationIndex(line,station),t=nowSec??(date.getHours()*3600+date.getMinutes()*60+date.getSeconds());
  if(idx==null)return[];

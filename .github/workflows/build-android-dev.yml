@@ -6254,6 +6254,24 @@ jobs:
 
       # APKs are published directly to the appropriate GitHub Release below.
       # Do not upload a separate Actions artifact: that creates a second, confusing APK download.
+          # TEMP DIAGNOSTIC: inspect the decoded spotting logic before building.
+      - name: Diagnose spotting position logic
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('mrt-tracker-app/app/src/main/assets/index.html')
+          h = p.read_text(encoding='utf-8')
+          terms = ['sighting','spotter','spotted','Rode','Spotted','logged','logSighting','spotLog','spot']
+          print('--- SPOTTING DIAGNOSTIC ---')
+          for term in terms:
+              hits = [m.start() for m in re.finditer(re.escape(term), h, re.I)]
+              print(term, len(hits), hits[:20])
+              for i in hits[:3]:
+                  print('>>>', term, 'at', i)
+                  print(h[max(0,i-900):i+2200])
+          print('--- END SPOTTING DIAGNOSTIC ---')
+
       - name: Publish to Releases
         env:
           GH_TOKEN: ${{ github.token }}

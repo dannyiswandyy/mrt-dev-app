@@ -3430,15 +3430,15 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
           h=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
           print('TERMINAL_TIMING_DIAG')
           for name in ['lineCuts','cutTrain','trainsOn']:
-              m=re.search(r'function\\s+'+name+r'\\s*\\(',h)
-              if not m:
+              needle='function '+name+'('
+              start=h.find(needle)
+              if start < 0:
                   print(name,'NOT FOUND'); continue
-              start=m.start(); nxt=re.search(r'\\nfunction\\s+[A-Za-z_$][\\w$]*\\s*\\(',h[m.end():])
-              end=m.end()+(nxt.start() if nxt else 12000)
+              nxt=h.find('\\nfunction ',start+len(needle))
+              end=nxt if nxt >= 0 else min(len(h),start+12000)
               print('---',name,'@',start,'---')
               print(h[start:min(end,start+12000)])
           PY

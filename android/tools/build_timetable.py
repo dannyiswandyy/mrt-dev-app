@@ -29,7 +29,6 @@ SAVED = sys.argv[2] if len(sys.argv) > 2 else None
 LINES = json.load(open(os.path.join(ROOT, "tools/lines.json")))
 SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY")
 API = "https://datamall2.mytransport.sg/ltaodataservice/GTFSScheduleTrain"
-DIRECT_ZIP = "https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/GTFSScheduleTrain.zip"
 report = []
 
 def say(line=""):
@@ -102,15 +101,21 @@ def lta_key():
         return env_key
     return legacy_lta_key()
 def http(url, headers=None, tries=3):
-    for t in range(tries):
+    h = {
+        "User-Agent": "MRT-Tracker-Dev/1.0",
+        "Accept": "application/json",
+        "Cache-Control": "no-cache",
+    }
+    h.update(headers or {})
+    for attempt in range(tries):
         try:
-            req = urllib.request.Request(url, headers=headers or {})
+            req = urllib.request.Request(url, headers=h)
             with urllib.request.urlopen(req, timeout=60) as r:
                 return r.read()
         except Exception as e:
-            if t == tries - 1:
+            if attempt == tries - 1:
                 raise
-            time.sleep(3 * (t + 1))
+            time.sleep(3 * (attempt + 1))
 
 def find_link(o):
     if isinstance(o, str):
@@ -244,43 +249,39 @@ def main():
     if not key:
         say("⚠️ No LTA key found, so the timetable was skipped.")
         finish(False)
+    # The new GTFS endpoints return a short-lived signed S3 URL. LTA says
+    # that URL expires after 15 minutes, so fetch the metadata and the file
+    # immediately in the same build. Do not use a guessed/static ZIP URL.
     try:
-        # LTA currently publishes the GTFS Schedule (Train) as an official direct ZIP.
-        # Prefer the authenticated API, then fall back to the official DataMall ZIP if
-        # the API gateway is temporarily unavailable.
-        meta = http(API, {"AccountKey": key, "accept": "application/json"})
-        link = find_link(json.loads(meta))
-        if not link:
-            raise ValueError("LTA's API reply had no download link")
-        data = http(link)
-        z = zipfile.ZipFile(io.BytesIO(data))
+        api_url = API + "?_=" + str(int(time.time()))
+        meta = http(api_url, {"AccountKey": key, "accept": "application/json"})
     except Exception as api_error:
-        try:
-            say(f"⚠️ LTA GTFS API unavailable ({api_error}); trying the official DataMall ZIP.")
-            data = http(DIRECT_ZIP)
-            z = zipfile.ZipFile(io.BytesIO(data))
-            say("✅ Downloaded the GTFS Schedule (Train) from the official LTA DataMall ZIP.")
-        except Exception as direct_error:
-            # If a newly configured secret is stale/wrong, retry the legacy key before
-            # giving up on the API path.
-            env_key = os.environ.get("LTA_ACCOUNT_KEY", "").strip()
-            fallback = legacy_lta_key() if env_key and key == env_key else ""
-            if fallback and fallback != key:
-                try:
-                    say("⚠️ LTA_ACCOUNT_KEY was rejected; retrying the compatibility key.")
-                    meta = http(API, {"AccountKey": fallback, "accept": "application/json"})
-                    link = find_link(json.loads(meta))
-                    if not link:
-                        raise ValueError("LTA's fallback reply had no download link")
-                    data = http(link)
-                    z = zipfile.ZipFile(io.BytesIO(data))
-                    say("✅ LTA DataMall accepted the compatibility key.")
-                except Exception:
-                    say(f"⚠️ Couldn't download the timetable from LTA API ({api_error}) or direct ZIP ({direct_error}).")
-                    finish(False)
-            else:
-                say(f"⚠️ Couldn't download the timetable from LTA API ({api_error}) or direct ZIP ({direct_error}).")
+        say(f"⚠️ LTA GTFS Schedule API request failed: {api_error}")
+        fallback = legacy_lta_key() if os.environ.get("LTA_ACCOUNT_KEY", "").strip() else ""
+        if fallback and fallback != key:
+            try:
+                say("⚠️ Retrying the schedule API with the compatibility key.")
+                meta = http(api_url, {"AccountKey": fallback, "accept": "application/json"})
+                key = fallback
+                say("✅ Compatibility-key request succeeded.")
+            except Exception as fallback_error:
+                say(f"⚠️ Compatibility-key retry also failed: {fallback_error}")
                 finish(False)
+        else:
+            finish(False)
+
+    try:
+        payload = json.loads(meta)
+        link = find_link(payload)
+        if not link:
+            raise ValueError("LTA returned no GTFS download link")
+        say("LTA returned a temporary GTFS Schedule download link; downloading it immediately.")
+        data = http(link, {"Accept": "*/*", "Cache-Control": "no-cache"})
+        z = zipfile.ZipFile(io.BytesIO(data))
+    except Exception as download_error:
+        say(f"⚠️ LTA returned the schedule metadata, but its temporary GTFS download failed: {download_error}")
+        say("The LTA GTFS Schedule endpoint currently requires the signed download URL to remain valid; a 403/404 here is not an authentication failure.")
+        finish(False)
     return process(z, data)
 
 def process(z, data):

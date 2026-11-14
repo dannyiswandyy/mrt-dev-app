@@ -8943,6 +8943,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     return `<div class="tsum" style="--c:var(--${x.line})">${trainSVG(t.dir)}<div><b>${t.atStation ? "Now at" : "Next stop"} ${esc(stop)}</b><br><span class="sub">${eta}${window.repWhen && repWhen(t) ? ` · ${repWhen(t)}` : ""}</span></div></div>
       ${slot ? `<p class="hint" style="margin:0"><b>Train slot</b> ${esc(slot)} · run T${esc(slot.padStart(3, "0"))}</p>` : tripNo ? `<p class="hint" style="margin:0"><b>Trip no.</b> ${esc(tripNo)}</p>` : ""}
       ${slot && window.spotSetHTML ? spotSetHTML(x.line, slot, T.now.iso) : ""}
+      ${slot && window.mrtOperatingHistoryHTML ? mrtOperatingHistoryHTML(x.line, slot, T.now.iso) : ""}
       ${depot ? `<p class="hint" style="margin:0"><span class="sb">${esc(depot.kind)}</span> at ${esc(depot.station)} · scheduled gap ${Math.round(depot.gapSec/60)} min · confidence ${depot.confidence}%</p>` : ""}
       <div class="hfacts">
         <div><span>Bound</span><b>${esc(full)}</b><small>direction of travel</small></div>

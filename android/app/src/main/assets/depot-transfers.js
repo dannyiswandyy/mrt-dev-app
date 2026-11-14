@@ -11,8 +11,15 @@ const DEPOT_STATIONS={
 const MIN_GAP=12*60;
 let cacheKey="", cache=new Map();
 
+let TT=null;
+function loadTT(){
+  if(TT)return TT;
+  try{if(window.MrtApp&&MrtApp.getTimetable)TT=JSON.parse(MrtApp.getTimetable())}catch(_){}
+  if(TT)return TT;
+  return null;
+}
 function meta(line){
-  const L=window.MrtApp&&MrtApp.getTimetable?(()=>{try{return JSON.parse(MrtApp.getTimetable())}catch(_){return null}})():null;
+  const L=loadTT();
   return L?.lines?.[line]?.tripMeta||null;
 }
 function build(line){

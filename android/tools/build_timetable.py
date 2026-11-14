@@ -131,7 +131,7 @@ def find_link(o):
     # the actual HTTPS URL rather than depending on one response shape.
     if raw:
         raw = html.unescape(raw)
-        matches = re.findall(r'https://[^\\s<>"\\']*gtfs[^\\s<>"\\']*', raw, re.I)
+        matches = re.findall(r"https://[^\\s<>\"']*gtfs[^\\s<>\"']*", raw, re.I)
         if matches:
             return matches[0].strip()
 

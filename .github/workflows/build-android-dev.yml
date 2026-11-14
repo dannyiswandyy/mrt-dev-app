@@ -245,6 +245,32 @@ jobs:
               </application>
           </manifest>
           MRTAPP_EOF
+          # Add the newly discovered Woodlands webcam as an additional Live Cam source.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('mrt-tracker-app/app/src/main/assets/index.html')
+          h = p.read_text(encoding='utf-8')
+          patch = r'''<script>
+          (() => {
+            const VIDEO = "kJItg6lV6v8";
+            const install = () => {
+              if (document.getElementById("mrtWoodlandsCam")) return;
+              const style = document.createElement("style");
+              style.id = "mrtWoodlandsCamStyle";
+              style.textContent = ".mrt-woodlands-cam{position:fixed;right:14px;bottom:88px;z-index:99990;background:var(--card,#111827);color:var(--text,#fff);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:10px 13px;font:600 13px system-ui;box-shadow:0 8px 30px #0008}.mrt-woodlands-cam:hover{filter:brightness(1.15)}.mrt-woodlands-modal{position:fixed;inset:0;z-index:100000;background:#000d;display:flex;align-items:center;justify-content:center;padding:18px}.mrt-woodlands-box{width:min(100%,900px);background:#050505;border-radius:18px;overflow:hidden;box-shadow:0 20px 70px #000}.mrt-woodlands-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:#fff;font:600 14px system-ui}.mrt-woodlands-close{border:0;background:#ffffff18;color:#fff;border-radius:10px;padding:7px 10px;font-size:16px}.mrt-woodlands-frame{display:block;width:100%;aspect-ratio:16/9;border:0}";
+              document.head.appendChild(style);
+              const b=document.createElement("button"); b.id="mrtWoodlandsCam"; b.className="mrt-woodlands-cam"; b.textContent="📹 Woodlands Cam";
+              b.onclick=()=>{const m=document.createElement("div");m.className="mrt-woodlands-modal";m.innerHTML='<div class="mrt-woodlands-box"><div class="mrt-woodlands-head"><span>Woodlands Cam · New angle</span><button class="mrt-woodlands-close" aria-label="Close">×</button></div><iframe class="mrt-woodlands-frame" src="https://www.youtube.com/embed/'+VIDEO+'?autoplay=1&mute=1&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>';m.querySelector(".mrt-woodlands-close").onclick=()=>m.remove();m.onclick=e=>{if(e.target===m)m.remove()};document.body.appendChild(m)};
+              document.body.appendChild(b);
+            };
+            if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",install,{once:true}); else install();
+          })();
+          </script>'''
+          if 'id="mrtWoodlandsCam"' not in h:
+              h = h.replace('</body>', patch + '\n</body>')
+              p.write_text(h, encoding='utf-8')
+          PY
+
           mkdir -p 'mrt-tracker-app/app/src/main/assets'
           # mrt-tracker-app/app/src/main/assets/index.html is stored compressed (gzip, then base64) to keep this file under GitHub's 500 KB limit
           base64 -d data/mrt-dev-page.b64 | gunzip > 'mrt-tracker-app/app/src/main/assets/index.html'

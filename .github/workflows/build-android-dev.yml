@@ -3432,7 +3432,7 @@ jobs:
 
           PY
           echo "=== TIMETABLE FUNCTION SIGNATURES ==="
-          grep -nE 'function (trainsOn|nextArrivals|lineCuts|cutTrain)' mrt-tracker-app/app/src/main/assets/index.html | head -20 || true
+          sed -n '1848,2010p' mrt-tracker-app/app/src/main/assets/index.html
 
       - uses: actions/setup-java@v4
         with:

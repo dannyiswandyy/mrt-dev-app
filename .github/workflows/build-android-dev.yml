@@ -3431,29 +3431,6 @@ jobs:
               p.write_text(h,encoding='utf-8')
           PY
 
-      # DEV vs normal page audit: compare the current Dev payload with the canonical public page.
-      - name: DEV vs normal page audit
-        continue-on-error: true
-        run: |
-          python3 - <<'PY'
-          import re, urllib.request
-          from pathlib import Path
-          dev=Path('mrt-tracker-app/app/src/main/assets/index.html').read_text(encoding='utf-8')
-          normal=urllib.request.urlopen('https://raw.githubusercontent.com/dannyiswandyy/Mrt-app/main/web/index.html', timeout=30).read().decode('utf-8')
-          def names(h, pat): return sorted(set(re.findall(pat, h, re.I)))
-          funcs=lambda h: names(h, r'function +([A-Za-z_$][A-Za-z0-9_$]*) *[(]')
-          ids=lambda h: names(h, r"""id=['"]([^'"]+)['"]""")
-          consts=lambda h: names(h, r'(?:const|let|var) +([A-Za-z_$][A-Za-z0-9_$]*) *=')
-          for label,fn in [('functions',funcs),('ids',ids),('state/constants',consts)]:
-              d=set(fn(dev)); n=set(fn(normal))
-              print('### '+label)
-              print('DEV_ONLY', ', '.join(sorted(d-n))[:12000])
-              print('NORMAL_ONLY', ', '.join(sorted(n-d))[:12000])
-          print('### size',len(dev),len(normal))
-          for term in ['DEV','sandbox','drive','fake','simulate','test mode','spot','crowd','weather','disruption','reminder','widget','notification','timetable','Live cam']:
-              print('MARKER',term,dev.lower().count(term.lower()),normal.lower().count(term.lower()))
-          PY
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

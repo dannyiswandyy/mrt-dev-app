@@ -64,6 +64,10 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private boolean pageLoaded = false;
     private boolean updating = false;
+    /** On screen right now (between onResume and onPause). */
+    private boolean resumed = false;
+    /** A new LTA timetable is waiting: load the page again next time the app is brought back. */
+    private boolean timetablePending = false;
     /** A video shown full screen (the Live cam's full-screen button), and how to hand it back. */
     private View fullView = null;
     private WebChromeClient.CustomViewCallback fullDone = null;
@@ -218,6 +222,8 @@ public class MainActivity extends Activity {
         // Notification channels (disruptions, trip reminders) and the background disruption check
         Alerts.channels(this);
         Alerts.schedule(this);
+        // LTA's timetable: checked for a new one every 6 hours or so, even while the app is closed
+        Timetable.schedule(this);
         if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("asked_notify", false)
                 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             prefs.edit().putBoolean("asked_notify", true).apply();
@@ -230,6 +236,32 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         checkForUpdate();
+    }
+
+    /** Checks LTA for a new timetable in the background; with an id, the page gets the answer. */
+    private void checkTimetableNow(final String id) {
+        new Thread(() -> {
+            JSONObject r = Timetable.refresh(getApplicationContext());
+            if (id == null) {
+                if ("new".equals(r.optString("status"))) timetableUpdated();
+                return;
+            }
+            final String js = "window.__native(" + JSONObject.quote(id) + ",200," + JSONObject.quote(r.toString()) + ")";
+            runOnUiThread(() -> web.evaluateJavascript(js, null));
+        }).start();
+    }
+
+    /**
+     * A new LTA timetable was saved (by the check above or the background job). The page reads the timetable when it
+     * loads, so load it again: straight away if the app isn't on screen, else the next time it's brought back.
+     */
+    static void timetableUpdated() {
+        MainActivity a = current.get();
+        if (a == null) return;                     // the app isn't open: it uses the new timetable when it next starts
+        a.runOnUiThread(() -> {
+            if (a.resumed) a.timetablePending = true;
+            else if (a.pageLoaded) a.web.reload();
+        });
     }
 
     /** Asks GitHub whether a newer version exists; if so, the page shows the update banner. */
@@ -256,7 +288,13 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         current = new java.lang.ref.WeakReference<>(this);
+        resumed = true;
         web.onResume();
+        if (timetablePending && pageLoaded) {
+            timetablePending = false;
+            web.reload();
+            return;
+        }
         if (pageLoaded) checkForUpdate();
         // Fresh status every time the app is opened or brought back to the front.
         if (pageLoaded) {
@@ -401,6 +439,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        resumed = false;
         // The Live cam stops streaming while the app is in the background (it saves mobile data).
         leaveFullScreen();
         // DEV:START
@@ -420,14 +459,29 @@ public class MainActivity extends Activity {
             return !ltaKey().isEmpty();
         }
 
-        /** LTA's official train timetable, packed into the app at build time ("" if this build has none). */
+        /** LTA's official train timetable: the newest one the app downloaded itself, else the one packed at build time ("" if none). */
         @JavascriptInterface
         public String getTimetable() {
-            try (InputStream in = getAssets().open("timetable.json")) {
-                return readAll(in);
-            } catch (Exception e) {
-                return "";
-            }
+            return Timetable.current(getApplicationContext());
+        }
+
+        /** The stations of the lines LTA's timetable covers, which the app needs to pack a new timetable. Checks for one if it's time. */
+        @JavascriptInterface
+        public void timetableStations(final String json) {
+            Timetable.setStations(getApplicationContext(), json);
+            if (Timetable.due(getApplicationContext())) checkTimetableNow(null);
+        }
+
+        /** Checks LTA for a new timetable now (the Settings button). Reply: {"status": "new" | "same" | "busy" | "error", "error"} */
+        @JavascriptInterface
+        public void checkTimetable(final String id) {
+            checkTimetableNow(id);
+        }
+
+        /** When the app last checked LTA for a new timetable (milliseconds since 1970; 0 if never). */
+        @JavascriptInterface
+        public String timetableChecked() {
+            return String.valueOf(Timetable.prefs(getApplicationContext()).getLong("checked", 0));
         }
 
         /** Building outlines and heights near stations (OpenStreetMap), packed at build time ("" if none). */

@@ -9,8 +9,6 @@ on:
     paths:
       - .github/workflows/build-android-dev.yml
       - android/**
-  schedule:
-    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions:

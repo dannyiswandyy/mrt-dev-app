@@ -2067,6 +2067,17 @@ if (TT){
     });
   }
 }
+/* The app keeps LTA's timetable up to date by itself (Timetable.java: every 6 hours or so it downloads LTA's
+   timetable again and packs it the same way the build does), so it needs the stations of the lines the
+   timetable covers, in the same order as tools/lines.json. A new timetable is used the next time the page loads. */
+const TT_LINES = ["NSL", "EWL", "NEL", "CCL", "DTL", "TEL", "CG", "BP", "SE", "SW", "PE", "PW"];
+try {
+  if (window.MrtApp && MrtApp.timetableStations){
+    const s = {};
+    for (const c of TT_LINES) if (LINES[c]) s[c] = {stations: LINES[c].stations.map(x => [x[0], x[1]])};
+    MrtApp.timetableStations(JSON.stringify(s));
+  }
+} catch(e){}
 const ttDayCache = {};
 /* Service calendars running on a service day (handles public holidays and other exceptions). */
 function ttServices(iso){
@@ -2707,6 +2718,13 @@ let autoRefresh = store.get("mrt.auto", true);
 /* --- native bridge --- */
 const pending = {};
 let reqId = 0;
+/* When the app last looked for a new LTA timetable (it does so by itself every 6 hours or so). */
+function ttLiveText(){
+  let at = 0; try { at = +APP.timetableChecked() || 0; } catch(e){}
+  if (!at) return "The app checks LTA for a new timetable by itself every 6 hours or so.";
+  const d = new Date(at), when = d.toLocaleString("en-SG", {timeZone: "Asia/Singapore", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false});
+  return `The app checks LTA for a new timetable by itself every 6 hours or so. Last checked ${when}.`;
+}
 window.__native = (id, code, body) => { const cb = pending[id]; delete pending[id]; cb && cb(code, body); };
 function nativeGet(url, withKey){
   return new Promise(res => { const id = "r" + (++reqId); pending[id] = (code, body) => res({code, body}); APP.fetch(id, url, !!withKey); });
@@ -3009,10 +3027,26 @@ function renderSettings(){
     <p class="muted" style="font-size:12px">Powered by Google, © 2026 Google</p><!--DEV:END-->
     <label>Train times</label>
     <p class="muted">${TT ? `<b style="color:var(--good)">✓ LTA official timetable</b>, downloaded ${esc(TT.feed.built)}. ${TT.feed.lines.length < ORDER.length ? `Estimated on: ${ORDER.filter(c => !TT.lines[c]).map(c => c === "CG" ? "CGL" : c).join(", ")}.` : "Covers every line."}` : "Estimated from typical frequencies. This version of the app doesn't include LTA's timetable."}</p>
+    ${APP && APP.checkTimetable ? `<p class="muted" id="ttLiveMsg">${esc(ttLiveText())}</p>
+    <div><button class="btn ghost" type="button" id="ttLive">Check for a new timetable</button></div>` : ""}
     ${APP.getVersion ? `<label>App version</label>
     <p class="muted"><b>${esc(APP.getVersion())}</b> · ${/*DEV:START*/APP_CHANNEL === "dev" ? "MRT Dev, the developer app for trying new features. It updates separately from MRT Tracker." : /*DEV:END*/"MRT Tracker (beta)"}</p>` : ""}
     ${APP.checkUpdateNow ? `<div><button class="btn ghost" type="button" id="updCheck">Check for updates</button></div><p class="muted" id="updMsg"></p>` : ""}</div>`;
 
+  const tl = $("ttLive");
+  if (tl) tl.onclick = () => {
+    tl.disabled = true; $("ttLiveMsg").textContent = "Asking LTA for its timetable. This can take up to a minute.";
+    const id = "l" + (++reqId);
+    pending[id] = (code, body) => {
+      tl.disabled = false;
+      let r = {}; try { r = JSON.parse(body); } catch(e){}
+      if (r.status === "new"){ $("ttLiveMsg").textContent = "LTA has a new timetable. Loading it…"; setTimeout(() => location.reload(), 800); }
+      else if (r.status === "same") $("ttLiveMsg").textContent = "You already have LTA's latest timetable. " + ttLiveText();
+      else if (r.status === "busy") $("ttLiveMsg").textContent = "The app is already checking. Try again in a minute.";
+      else $("ttLiveMsg").textContent = `Couldn't get LTA's timetable (${r.error || "no answer"}). The app tries again by itself later.`;
+    };
+    APP.checkTimetable(id);
+  };
   const uc = $("updCheck");
   if (uc) uc.onclick = () => {
     uc.disabled = true; $("updMsg").textContent = "Checking…";

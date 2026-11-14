@@ -20,6 +20,10 @@ timetable.json:
             The destination is the station the trip is headed for (its headsign), so special-bound trains
             that end partway along the line show where they end; -1 when it's simply where the run ends,
             -2 for a full loop back to where it started.
+
+The app does the same itself every 6 hours or so (android/app/src/main/java/sg/mrttracker/app/Timetable.java,
+Timetable.Packer), so a new LTA timetable doesn't need a new build. Keep the two in step: for the same GTFS
+zip they give the same timetable.json, apart from "feed".
 """
 import csv, hashlib, html, io, json, os, re, shutil, sys, time, urllib.request, zipfile
 

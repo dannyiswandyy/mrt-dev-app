@@ -383,11 +383,13 @@ final class Timetable {
         static final class Row {
             final int[] cands;
             final int arr, dep;
+            final String stopId;
 
-            Row(int[] c, int a, int d) {
+            Row(int[] c, int a, int d, String s) {
                 cands = c;
                 arr = a;
                 dep = d;
+                stopId = s;
             }
         }
 
@@ -673,12 +675,15 @@ final class Timetable {
             final Map<String, Map<String, Integer>> patIdx = new HashMap<>();
             final Map<String, List<Object[]>> outTrips = new HashMap<>();
             final Map<String, LinkedHashMap<String, String>> meta = new HashMap<>();
+            // line -> (station index, direction) -> platform_code -> how many runs use it, in the order first seen
+            final Map<String, Map<String, LinkedHashMap<String, Integer>>> platN = new HashMap<>();
             for (String ln : lineOrder) {
                 patsArr.put(ln, new ArrayList<>());
                 patsHead.put(ln, new ArrayList<>());
                 patIdx.put(ln, new HashMap<>());
                 outTrips.put(ln, new ArrayList<>());
                 meta.put(ln, new LinkedHashMap<>());
+                platN.put(ln, new HashMap<>());
             }
 
             for (Map.Entry<String, List<StopTime>> te : byTrip.entrySet()) {
@@ -722,7 +727,7 @@ final class Timetable {
                     if (arr == null || dep == null) continue;
                     int[] o = new int[on.size()];
                     for (int k = 0; k < o.length; k++) o[k] = on.get(k);
-                    seq.add(new Row(o, arr, dep));
+                    seq.add(new Row(o, arr, dep, r.stopId == null ? "" : r.stopId));
                 }
                 int sid = svc.apply(trip.get("service_id"));
                 int tripT0 = seq.isEmpty() ? 0 : seq.get(0).dep;
@@ -743,6 +748,12 @@ final class Timetable {
                     for (int k = 0; k < Math.min(leg.rows.size(), idx.size()); k++) {
                         Row r = leg.rows.get(k);
                         times.put(idx.get(k), new int[]{r.arr - t0, r.dep - t0});
+                        Map<String, String> stop = stops.get(r.stopId);
+                        String pc = stop == null ? "" : get(stop, "platform_code").trim();
+                        if (!pc.isEmpty()) {
+                            LinkedHashMap<String, Integer> cnt = platN.get(line).computeIfAbsent(idx.get(k) + "|" + (d > 0 ? 0 : 1), q -> new LinkedHashMap<>());
+                            cnt.put(pc, cnt.getOrDefault(pc, 0) + 1);
+                        }
                     }
                     times.put(idx.get(0), new int[]{0, 0});
                     int from = idx.get(0), to = idx.get(idx.size() - 1);
@@ -889,6 +900,26 @@ final class Timetable {
                     firstM = false;
                     str(o, e.getKey());
                     o.append(':').append(e.getValue());
+                }
+                o.append("},\"plat\":{");
+                java.util.TreeMap<Integer, String[]> pl = new java.util.TreeMap<>();
+                for (Map.Entry<String, LinkedHashMap<String, Integer>> e : platN.get(ln).entrySet()) {
+                    String[] kk = e.getKey().split("\\|");
+                    String best = null;
+                    int bn = -1;
+                    for (Map.Entry<String, Integer> c : e.getValue().entrySet()) if (c.getValue() > bn) { best = c.getKey(); bn = c.getValue(); }
+                    pl.computeIfAbsent(Integer.parseInt(kk[0]), q -> new String[]{"", ""})[Integer.parseInt(kk[1])] = best;
+                }
+                boolean firstP = true;
+                for (Map.Entry<Integer, String[]> e : pl.entrySet()) {
+                    if (!firstP) o.append(',');
+                    firstP = false;
+                    str(o, String.valueOf(e.getKey()));
+                    o.append(":[");
+                    str(o, e.getValue()[0]);
+                    o.append(',');
+                    str(o, e.getValue()[1]);
+                    o.append(']');
                 }
                 o.append("}}");
             }

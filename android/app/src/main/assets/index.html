@@ -1019,6 +1019,11 @@ body.on-map .hx-sheet{max-height:58vh}
 .plat{display:grid;border:1px solid var(--rule);border-radius:14px;overflow:hidden}
 .plat > div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-top:1px solid var(--soft);font-size:14px;border-left:5px solid var(--c)}
 .plat > div:first-child{border-top:0}
+.rtstops{display:grid;gap:2px;font-size:13px;margin-top:4px}
+.rtstops div{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-top:1px solid var(--soft)}
+.rtstops div:first-child{border-top:0}
+.rtstops b{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.plat .pf{font:600 11px var(--body);opacity:.65;margin-left:6px;white-space:nowrap}
 .plat .t{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .plat .t em{font-style:normal;font-weight:600}
 .plat .sbrow{background:color-mix(in srgb,var(--soft) 70%,transparent)}
@@ -2090,6 +2095,15 @@ function ttServices(iso){
   for (const [i, type] of (TT.except[ymd] || [])) type === 1 ? on.add(i) : on.delete(i);
   return on;
 }
+/* Which platform trains on a line leave a station from, in direction dir, by LTA's timetable (its platform_code);
+   "" if LTA doesn't say (older saved timetables don't have it). */
+function platOf(code, i, dir){
+  const P = !SIM.est && TT && TT.lines[code] && TT.lines[code].plat; if (!P) return "";
+  if (P[i] && P[i][dir]) return P[i][dir];
+  const st = LINES[code].stations, c = st[i] && st[i][0];        // a station listed twice (the Circle Line's Promenade)
+  for (let j = 0; j < st.length; j++) if (j !== i && st[j][0] === c && P[j] && P[j][dir]) return P[j][dir];
+  return "";
+}
 /* Today's runs on a line: [{s: start in seconds, p: pattern}], sorted by start. */
 function ttTrips(code, iso){
   if (SIM.est || !TT || !TT.lines[code]) return null;      // test mode can switch to estimates
@@ -2175,6 +2189,7 @@ function ttLinks(list){
   // minutes after LTA's time, so their next run leaves that much late (r.tl, seconds) and makes the time up along
   // the way, getting to the other end on time (see ttSched). Without this the same train showed twice for a few
   // minutes, arriving and already leaving. Only on lines with train slots: the LRT's links are a best guess.
+  for (const [b, a] of prev) b.pv = a;                      // the same train's run before this one
   if (slotted) for (const r of list){
     const a = prev.get(r);
     r.tl = a ? Math.max(0, Math.min(TT_LAYOVER_EARLY + TT_TURN_MIN, gets(a) + TT_TURN_MIN - r.s, r.p.end / 2)) : 0;
@@ -2184,18 +2199,86 @@ function ttLinks(list){
 /* Where a run is in its own timetable (seconds since the service day began) at clock time `sec`, and how fast
    that timetable goes by (1: as LTA has it). LTA's live delay or a Live cam correction moves the whole run;
    otherwise a run that has to wait for its train (r.tl) leaves late and catches up by the end of the run. */
+/* How late a run leaves (seconds): r.tl from the timetable, or later if LTA's live feed (or a sighting) says the
+   same train is late on the run before, since it can't leave before it has got in and turned round. */
+function ttLateStart(code, r, mv){
+  const tl = r.tl || 0, a = r.pv; if (!a) return tl;
+  const ma = mv && mv.get(`${code}t${a.s}p${a.pi}`);
+  if (!ma && !rtProfileFor(code, a, ma)) return tl;             // nothing live about it: the timetable figure
+  const gets = ttAt(code, a, a.p.arr.length - 1, mv);           // when it really gets in
+  return Math.max(0, Math.min(r.p.end / 2, Math.max(tl, gets + TT_TURN_MIN - r.s)));
+}
 function ttSched(code, r, sec, mv){
-  const m = mv && mv.get(`${code}t${r.s}p${r.pi}`);
+  const m = mv && mv.get(`${code}t${r.s}p${r.pi}`), pr = rtProfileFor(code, r, m);
+  if (pr){                                         // LTA's delay at each stop: in between, the train makes up (or loses) time evenly
+    const R = pr.R, S = pr.S, e = sec - r.s, n = R.length - 1;
+    if (e <= R[0]) return {sec: r.s + e - (R[0] - S[0]), rate: 1};
+    if (e >= R[n]) return {sec: r.s + e - (R[n] - S[n]), rate: 1};
+    let j = 0; while (j < n - 1 && R[j + 1] <= e) j++;
+    const w = R[j + 1] - R[j], rate = w > 0 ? (S[j + 1] - S[j]) / w : 1;
+    return {sec: r.s + (w > 0 ? S[j] + (e - R[j]) * rate : S[j + 1]), rate: rate || 1};
+  }
   if (m) return {sec: sec - m * 60, rate: 1};
-  const tl = r.tl || 0; if (!tl) return {sec, rate: 1};
+  const tl = ttLateStart(code, r, mv); if (!tl) return {sec, rate: 1};
   const e = sec - r.s, rate = r.p.end / (r.p.end - tl);
   return {sec: r.s + (e < tl ? e - tl : (e - tl) * rate), rate};
 }
+/* LTA's live train feed, stop by stop, for one run: {aD, dD: delay in seconds at each stop of the run (arriving,
+   leaving), skip: stops it doesn't call at, R / S: its arrive and leave times at each stop, live and timetabled,
+   in seconds from its start}. null when LTA gives one delay for the whole trip (that moves the run as a whole, in
+   moved()), or someone's sighting (moved()) says otherwise. */
+const rtProfCache = new WeakMap();
+let rtVer = 0;
+const RT_ALIAS = {CE1: "CC34", CE2: "CC33"};
+function rtProfileFor(code, r, m){
+  let st = null; try { st = rtState; } catch(e){ return null; }     // not set up yet while the page is still starting
+  if (!st || !st.trips || !r.tid || Date.now() - st.at > 10 * 60e3) return null;
+  const u = st.trips[r.tid]; if (!u || !u.s || u.x) return null;
+  if (m != null && Math.abs(m * 60 - (u.d || 0)) > 1) return null;   // a sighting moved this train: that wins
+  const c = rtProfCache.get(r); if (c && c.v === rtVer) return c.p;
+  const p = r.p, n = p.arr.length, stns = LINES[code].stations;
+  const day0 = Date.parse(sgNow().iso + "T00:00:00+08:00") / 1000;
+  const aD = new Array(n).fill(null), dD = new Array(n).fill(null), skip = new Set();
+  for (const [sid, seq, a, d, rel, at, dt] of u.s){
+    let k = -1;
+    if (sid){
+      const pre = sid.split("_")[0].toUpperCase(), cd = RT_ALIAS[pre] || pre;
+      for (let i = 0; i < stns.length && k < 0; i++) if (stns[i][0] === cd){ const q = (i - p.f) * p.d; if (q >= 0 && q < n) k = q; }
+    } else if (seq != null && seq >= 1 && seq <= n) k = seq - 1;
+    if (k < 0) continue;
+    if (rel === 1) skip.add(k);
+    const ad = a != null ? a : at ? at - (day0 + r.s + p.arr[k]) : null;     // a delay, or a time to work it out from
+    const dd = d != null ? d : dt ? dt - (day0 + r.s + p.dep[k]) : null;
+    if (ad != null) aD[k] = ad;
+    if (dd != null) dD[k] = dd;
+  }
+  // a delay carries on to the stops after it until the next one LTA gives; before the first, the first one
+  let cur = null;
+  for (let k = 0; k < n; k++){
+    if (aD[k] == null) aD[k] = cur; else cur = aD[k];
+    if (dD[k] == null) dD[k] = cur; else cur = dD[k];
+  }
+  const first = aD.find(x => x != null) ?? dD.find(x => x != null) ?? (u.d || 0);
+  for (let k = 0; k < n; k++){ if (aD[k] == null) aD[k] = first; if (dD[k] == null) dD[k] = aD[k]; }
+  let prof = null;
+  if (skip.size || aD.some(x => x !== aD[0]) || dD.some(x => x !== aD[0])){
+    const R = [], S = [];
+    for (let k = 0; k < n; k++){
+      const ra = Math.max(R.length ? R[R.length - 1] : -Infinity, p.arr[k] + aD[k]);
+      const rd = skip.has(k) && k > 0 && k < n - 1 ? ra : Math.max(ra, p.dep[k] + dD[k]);   // not stopping: straight through
+      R.push(ra, rd); S.push(p.arr[k], p.dep[k]);
+    }
+    prof = {aD, dD, skip, R, S};
+  }
+  rtProfCache.set(r, {v: rtVer, p: prof});
+  return prof;
+}
 /* When a run gets to the stop `k` stops along it, in clock time (seconds): the other way round from ttSched. */
 function ttAt(code, r, k, mv){
-  const m = mv && mv.get(`${code}t${r.s}p${r.pi}`);
+  const m = mv && mv.get(`${code}t${r.s}p${r.pi}`), pr = rtProfileFor(code, r, m);
+  if (pr) return r.s + pr.R[2 * k];
   if (m) return r.s + r.p.arr[k] + m * 60;
-  const tl = r.tl || 0;
+  const tl = ttLateStart(code, r, mv);
   return tl ? r.s + tl + r.p.arr[k] * (r.p.end - tl) / r.p.end : r.s + r.p.arr[k];
 }
 function ttTrainsOn(code, now, list){
@@ -2219,7 +2302,7 @@ function ttTrainsOn(code, now, list){
     }
     const p = r.p, nk = st.at ? st.k : st.k + 1;
     out.push({id: runId(r), prev: pr ? runId(pr) : undefined, dir: p.d > 0 ? 0 : 1, dep: r.s / 60, ref: r, idx: st.idx, to: p.to,
-      next: p.f + p.d * nk, eta: Math.max(0, (r.s + p.arr[nk] - sec) / 60 / sc.rate), atStation: st.at});
+      next: p.f + p.d * nk, eta: Math.max(0, (ttAt(code, r, nk, mv) - (now.mins * 60 - late[p.d > 0 ? 0 : 1])) / 60), atStation: st.at});
   }
   return out;
 }
@@ -2235,6 +2318,8 @@ function ttNext(list, s, dir, now, count, reach){
     const k = (s - p.f) * p.d;
     if (k < 0 || k > p.arr.length - 1 || (k === p.arr.length - 1 && !(LINES[list.code].bound && p.to === -1))) continue;   // a Circle Line loop run goes on round from its last stop here
     if (reach != null && (reach - p.f) * p.d > p.arr.length - 1) continue;
+    const m0 = mv && mv.get(`${list.code}t${r.s}p${r.pi}`), pr = rtProfileFor(list.code, r, m0);
+    if (pr && pr.skip.has(k)) continue;                    // LTA says this train doesn't stop here
     const t = ttAt(list.code, r, k, mv);
     if (t >= sec - 10) res.push({m: (t - sec) / 60, to: p.to});
   }
@@ -2804,6 +2889,7 @@ window.appResume = () => { refreshAll(); rtRefresh(); };     // called by the ap
    trip ids, then moved on the map and in arrival times like any other correction. Service alerts:
    shown on the Updates tab. The feeds only list trains and alerts when there's something to say,
    so most of the time they're empty and nothing changes. Checked every minute while the app is open. */
+const rtHist = {};                            // trip id -> [[time, delay s], ...] over the last half hour
 let rtState = store.get("mrt.rt", null);      // {at, feedAt, trips: {tripId: {d: delay s, x: cancelled}}, alerts: [...], err}
 const RT_EVERY = 60e3;
 function pbFields(b){                         // protocol buffers: {field: [values]}; varints as BigInt, bytes as Uint8Array
@@ -2835,12 +2921,16 @@ function rtParse(b64, kind){
       if (!id) continue;
       const rel = trip[4] ? pbInt(trip[4][0]) : 0;            // 3 = cancelled
       let d = tu[5] ? pbInt(tu[5][0]) : null;
-      for (const s of tu[2] || []){                             // the first stop with a delay
-        const u = pbFields(s);
-        for (const ev of [u[2], u[3]]) if (d == null && ev){ const x = pbFields(ev[0]); if (x[1]) d = pbInt(x[1][0]); }
-        if (d != null) break;
+      // each stop LTA says something about: [stop id, stop sequence, arrival delay, departure delay, 1 = not stopping,
+      // arrival time, departure time] (delays in seconds; times in seconds since 1970, when LTA gives a time not a delay)
+      const ss = [], ev = f => { if (!f) return [null, null]; const x = pbFields(f[0]); return [x[1] ? pbInt(x[1][0]) : null, x[2] ? pbInt(x[2][0]) : null]; };
+      for (const s of tu[2] || []){
+        const u = pbFields(s), [a, at] = ev(u[2]), [dd, dt] = ev(u[3]);
+        if (d == null && (a != null || dd != null)) d = a != null ? a : dd;    // the trip's delay: the first stop with one
+        ss.push([pbStr((u[4] || [])[0]), u[1] ? pbInt(u[1][0]) : null, a, dd, u[5] ? pbInt(u[5][0]) : 0, at, dt]);
       }
-      res.trips[id] = {d: d || 0, x: rel === 3 ? 1 : 0, route: pbStr((trip[5] || [])[0])};
+      const varies = ss.some(q => q[4] === 1 || (q[2] != null && q[2] !== d) || (q[3] != null && q[3] !== d) || (q[2] == null && q[3] == null && (q[5] || q[6])));
+      res.trips[id] = Object.assign({d: d || 0, x: rel === 3 ? 1 : 0, route: pbStr((trip[5] || [])[0])}, varies ? {s: ss} : {});
     }
     if (kind === "alerts" && e[5]){
       const a = pbFields(e[5][0]);
@@ -2873,7 +2963,10 @@ async function rtRefresh(){
   st.alerts = st.alerts.filter(a => !a.per.length || a.per.some(([s, e]) => (!s || s <= now) && (!e || e >= now)));
   const changed = !rtState || JSON.stringify([rtState.trips, rtState.alerts]) !== JSON.stringify([st.trips, st.alerts]);
   rtState = st; store.set("mrt.rt", st);
-  if (changed){ for (const k in rtMapCache) delete rtMapCache[k]; for (const k in movedMix) delete movedMix[k]; mDirty = true; }
+  // each trip's delay over the last half hour, to see whether it's falling behind or making up time
+  for (const [id, u] of Object.entries(st.trips)){ const q = rtHist[id] || (rtHist[id] = []); if (!q.length || q[q.length - 1][0] < now - 30e3) q.push([now, u.d || 0]); }
+  for (const id in rtHist){ const q = rtHist[id].filter(x => x[0] > now - 30 * 60e3); if (q.length) rtHist[id] = q; else delete rtHist[id]; }
+  if (changed){ for (const k in rtMapCache) delete rtMapCache[k]; for (const k in movedMix) delete movedMix[k]; rtVer++; mDirty = true; }
   renderUpdates();
 }
 setInterval(() => { if (Date.now() - rtLast >= RT_EVERY - 1000) rtRefresh(); }, 15e3);
@@ -2890,7 +2983,41 @@ window.rtShifts = (code, iso) => {
   return rtMapCache[k] = m.size ? m : null;
 };
 /* For a train's card: what LTA's live feed says about it. */
+/* Is a train falling behind, making up time, or steady? From the delays LTA gives for its stops ahead, else
+   from how its delay has changed over the last few minutes. {kind: "behind" | "recovering" | "steady", by: seconds} */
+function rtTrend(code, r){
+  let st = null; try { st = rtState; } catch(e){ return null; }
+  const u = st && st.trips && r && r.tid && st.trips[r.tid]; if (!u) return null;
+  const given = (u.s || []).map(q => q[2] != null ? q[2] : q[3]).filter(x => x != null);
+  let by = given.length >= 2 ? given[given.length - 1] - given[0] : null;
+  if (by == null){
+    const q = (rtHist[r.tid] || []).filter(x => x[0] >= Date.now() - 10 * 60e3);
+    if (q.length >= 2 && q[q.length - 1][0] - q[0][0] >= 3 * 60e3) by = q[q.length - 1][1] - q[0][1];
+  }
+  if (by == null) return null;
+  return {kind: by >= 30 ? "behind" : by <= -30 ? "recovering" : "steady", by};
+}
+const fmtLate = s => (s < 0 ? "−" : "+") + (Math.abs(s) >= 90 ? `${Math.round(Math.abs(s) / 60)} min` : `${Math.round(Math.abs(s))}s`);
 window.rtTrainNote = (code, t) => {
+  const pr = t && t.ref && rtProfileFor(code, t.ref, null), tr = t && t.ref && rtTrend(code, t.ref);
+  const trend = !tr ? "" : tr.kind === "behind" ? ` · <b>falling behind</b> (${fmtLate(tr.by)} along the way)`
+    : tr.kind === "recovering" ? ` · <b>making up time</b> (${fmtLate(tr.by)} along the way)` : "";
+  if (pr){                                                     // LTA gives a delay for each stop, and maybe stops it skips
+    const p = t.ref.p, k = Math.max(0, Math.min(p.arr.length - 1, Math.round((t.next - p.f) * p.d))), v = pr.aD[k];
+    const st = LINES[code].stations, nm = q => (st[p.f + p.d * q] || [])[1] || "";
+    const steady = tr && tr.kind === "steady" && Math.abs(v) >= 60 ? " · running consistently late" : "";
+    const rows = [];
+    for (let q = k; q < p.arr.length && rows.length < 6; q++){
+      rows.push(`<div><span>${esc(nm(q))}</span><b>${pr.skip.has(q) ? "not stopping" : Math.abs(pr.aD[q]) < 5 ? "on time" : fmtLate(pr.aD[q])}</b></div>`);
+    }
+    const late = Math.abs(v) < 30 ? "On time" : v > 0 ? `${fmtLate(v)} late` : `${fmtLate(-v).slice(1)} early`;
+    return `<p class="hint" style="margin:0"><b>${late} at ${esc(nm(k))}</b>${trend}${steady}, by LTA's live train feed. Its place on the map and its arrival times follow these.</p>
+      <div class="rtstops">${rows.join("")}</div>`;
+  }
+  if (trend){
+    const m0 = window.rtShifts(code, sgNow().iso), v0 = m0 && t && m0.get(t.id);
+    if (v0 != null && Math.abs(v0) >= 0.5) return `<p class="hint" style="margin:0"><b>Running about ${Math.round(Math.abs(v0))} min ${v0 > 0 ? "late" : "early"}</b>${trend}, by LTA's live train feed. Its place on the map and its arrival times allow for this.</p>`;
+  }
   const m = window.rtShifts(code, sgNow().iso), v = m && t && m.get(t.id);
   if (v == null || Math.abs(v) < 0.5) return "";
   return `<p class="hint" style="margin:0"><b>${v > 0 ? `Running about ${Math.round(v)} min late` : `Running about ${Math.round(-v)} min early`}</b>, by LTA's live train feed. Its place on the map and its arrival times allow for this.</p>`;
@@ -8621,7 +8748,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
         const arr = nextArrivals(x.line, i, d, now, cnt || 3), to = dest(L, d, act);
         const items = arr.map((m, k) => ({m, sb: isShortTo(L, d, act, arr.to[k]) ? act[arr.to[k]] : null, last: isLastCall(x.line, i, d, now, m)}));
         const dis = segs.some(sg => (sg.lines || [sg.line]).includes(x.line) && (sg.codes || []).includes(x.code) && dirOk(sg, to));
-        out.push({line: x.line, code: x.code, to, items, dis});
+        out.push({line: x.line, code: x.code, to, items, dis, plat: platOf(x.line, i, d)});
       }
     }
     return out;
@@ -8721,7 +8848,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       const groups = [];
       for (const it of r.items){ const nm = it.sb ? (BOUND_RE.test(r.to) ? `${r.to} · ends at ${it.sb[1]}` : it.sb[1]) : r.to; let g = groups.find(x => x.nm === nm); if (!g) groups.push(g = {nm, sb: !!it.sb, ms: [], ls: []}); g.ms.push(it.m); g.ls.push(it.last); if (it.sb && !BOUND_RE.test(r.to)) anySb = true; }
       if (r.dis) anyDis = true;
-      for (const g of groups) rows.push(`<div style="--c:var(--${r.line})"${g.sb ? ' class="sbrow"' : ""}><span>${codePills([[r.line, r.code]])}${esc(toW(g.nm))}${g.sb && !BOUND_RE.test(r.to) ? `<span class="sb">special-bound</span>` : ""}${r.dis ? `<span class="slow">disrupted</span>` : ""}</span><span class="t"><em>${fmt(g.ms[0])}</em>${g.ls[0] ? lastTag : ""}${g.ms.slice(1).map((m, k) => " · " + mins(m) + (g.ls[k + 1] ? lastTag : "")).join("")}</span></div>`);
+      for (const g of groups) rows.push(`<div style="--c:var(--${r.line})"${g.sb ? ' class="sbrow"' : ""}><span>${codePills([[r.line, r.code]])}${esc(toW(g.nm))}${g.sb && !BOUND_RE.test(r.to) ? `<span class="sb">special-bound</span>` : ""}${r.dis ? `<span class="slow">disrupted</span>` : ""}${r.plat ? `<span class="pf">Platform ${esc(r.plat)}</span>` : ""}</span><span class="t"><em>${fmt(g.ms[0])}</em>${g.ls[0] ? lastTag : ""}${g.ms.slice(1).map((m, k) => " · " + mins(m) + (g.ls[k + 1] ? lastTag : "")).join("")}</span></div>`);
     }
     const seen = new Set(), cws = e.codes.filter(x => !seen.has(x.code) && seen.add(x.code)).map(x => { const c = crowdChip(x.code); return c ? `<span>${codePills([[x.line, x.code]])}${c}</span>` : ""; }).join("");
     return `<div><p class="hsub">Next trains${TT && !SIM.est ? " · LTA timetable" : " · estimated"}</p><div class="plat">${rows.join("")}</div>

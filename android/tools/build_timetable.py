@@ -16,7 +16,11 @@ timetable.json:
   services: [[service_id, "1111100" (Mon..Sun), start "YYYYMMDD", end "YYYYMMDD"], ...]
   except:   {"YYYYMMDD": [[service index, 1 = added | 2 = removed], ...]}
   lines:    {NSL: {pats: [[first station index, step +1/-1, [arrive s], [depart s], destination index], ...],
-                   trips: [[start s since midnight, pattern index, service index, LTA trip id], ...]}, ...}
+                   trips: [[start s since midnight, pattern index, service index, LTA trip id], ...],
+                   tripMeta: {LTA trip id: {...}},
+                   plat: {"station index": [platform towards the line's last station, towards its first], ...]}, ...}
+            plat is LTA's platform_code for the stops the trips use ("" if LTA gives none), the most used one per
+            station and direction.
             The destination is the station the trip is headed for (its headsign), so special-bound trains
             that end partway along the line show where they end; -1 when it's simply where the run ends,
             -2 for a full loop back to where it started.
@@ -191,18 +195,19 @@ def legs_for(seq, line):
     A run also breaks where two stops in a row aren't neighbours in the app's list, such as where the
     Circle Line's loop joins (Promenade and Bayfront), so no run is drawn across the whole line."""
     legs, cur = [], None
-    for cands, arr, dep in seq:
+    for row in seq:
+        cands = row[0]
         if cur is None:
-            cur = {"rows": [(cands, arr, dep)], "idx": [], "dir": 0}
+            cur = {"rows": [row], "idx": [], "dir": 0}
             continue
         if not cur["idx"]:
             prev = cur["rows"][-1][0]
             pairs = [(abs(a - b), a, b) for a in prev for b in cands if a != b]
             if not pairs or min(pairs)[0] > MAX_STEP:
-                cur = {"rows": [(cands, arr, dep)], "idx": [], "dir": 0}
+                cur = {"rows": [row], "idx": [], "dir": 0}
                 continue
             _, a, b = min(pairs)
-            cur["rows"] = [cur["rows"][-1], (cands, arr, dep)]
+            cur["rows"] = [cur["rows"][-1], row]
             cur["idx"] = [a, b]
             cur["dir"] = 1 if b > a else -1
             continue
@@ -210,7 +215,7 @@ def legs_for(seq, line):
         ahead = [x for x in cands if (x - last) * d > 0]
         nxt = min(ahead, key=lambda x: abs(x - last)) if ahead else None
         if nxt is not None and abs(nxt - last) <= MAX_STEP:
-            cur["rows"].append((cands, arr, dep))
+            cur["rows"].append(row)
             cur["idx"].append(nxt)
         else:                                   # the train turns (or jumps): start a new run from the last stop
             legs.append(cur)
@@ -220,11 +225,11 @@ def legs_for(seq, line):
             pairs = [(abs(a - b), a, b) for a in prow[0] for b in cands if b != a]
             if pairs and min(pairs)[0] <= MAX_STEP:
                 _, a, b = min(pairs)
-                cur["rows"].append((cands, arr, dep))
+                cur["rows"].append(row)
                 cur["idx"] = [a, b]
                 cur["dir"] = 1 if b > a else -1
             else:
-                cur = {"rows": [(cands, arr, dep)], "idx": [], "dir": 0}
+                cur = {"rows": [row], "idx": [], "dir": 0}
     if cur and cur["idx"]:
         legs.append(cur)
     return legs
@@ -385,6 +390,7 @@ def process(z, data):
                               if not c and stops[sid].get("location_type", "0") in ("", "0")})
 
     out = {ln: {"pats": [], "trips": [], "tripMeta": {}} for ln in LINES}
+    plat_n = {ln: {} for ln in LINES}       # (station index, direction) -> {platform_code: how many runs use it}
     pat_idx = {ln: {} for ln in LINES}
     per_line = {ln: 0 for ln in LINES}
     skipped = []
@@ -416,7 +422,7 @@ def process(z, data):
                 dep = secs(r.get("departure_time") or r.get("arrival_time"))
             except Exception:
                 continue
-            seq.append((on, arr, dep))
+            seq.append((on, arr, dep, r.get("stop_id") or ""))
         sid = svc(trips[tid]["service_id"])
         trip_t0 = seq[0][2] if seq else 0
         starts_extra = []
@@ -429,8 +435,12 @@ def process(z, data):
             idx, d = leg["idx"], leg["dir"]
             t0 = leg["rows"][0][2]
             times = {}
-            for (cs, arr, dep), i in zip(leg["rows"], idx):
+            for (cs, arr, dep, stop_id), i in zip(leg["rows"], idx):
                 times[i] = (arr - t0, dep - t0)
+                pc = (stops.get(stop_id, {}).get("platform_code") or "").strip()
+                if pc:
+                    c = plat_n[line].setdefault((i, 0 if d > 0 else 1), {})
+                    c[pc] = c.get(pc, 0) + 1
             times[idx[0]] = (0, 0)
             span = list(range(idx[0], idx[-1] + d, d))
             known = [i for i in span if i in times]
@@ -476,6 +486,11 @@ def process(z, data):
 
     for ln in out:
         out[ln]["trips"].sort()
+        pl = {}
+        for (i, dr), c in plat_n[ln].items():
+            best = max(c, key=lambda k: (c[k], -list(c).index(k)))    # the most used; a tie: the first seen
+            pl.setdefault(i, ["", ""])[dr] = best
+        out[ln]["plat"] = {str(i): pl[i] for i in sorted(pl)}
     lines_ok = [ln for ln in out if out[ln]["trips"]]
 
     def special(ln):

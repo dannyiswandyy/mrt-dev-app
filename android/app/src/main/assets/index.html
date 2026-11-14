@@ -3898,7 +3898,7 @@ function mapDraw(){
    right of the arrow, joined by a short line, with the model you entered. An eye for "Spotted", a gold star and gold
    edge for "Rode". The arrow itself isn't touched. */
 function drawSpotTag(ctx, x, y, r, tag, fs, avoid){
-  const ride = tag.kind === "ride", txt = tag.model || (ride ? "Rode" : "Spotted");
+  const ride = tag.kind === "ride", txt = tag.set || tag.model || (ride ? "Rode" : "Spotted");
   ctx.save();
   ctx.font = `700 ${fs}px Barlow, system-ui, sans-serif`; ctx.textBaseline = "middle"; ctx.textAlign = "left";
   const ic = fs * 0.95, h = Math.round(fs + 7), w = Math.ceil(ctx.measureText(txt).width) + ic + 14;
@@ -8939,7 +8939,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const block = tm && tm.block ? String(tm.block) : "";
     const eta = t.atStation ? "Boarding now" : t.eta < 0.5 ? "Arriving" : `In about ${Math.max(1, Math.round(t.eta))} min`;
     return `<div class="tsum" style="--c:var(--${x.line})">${trainSVG(t.dir)}<div><b>${t.atStation ? "Now at" : "Next stop"} ${esc(stop)}</b><br><span class="sub">${eta}${window.repWhen && repWhen(t) ? ` · ${repWhen(t)}` : ""}</span></div></div>
-      ${slot ? `<p class="hint" style="margin:0"><b>Train slot</b> ${esc(slot)}</p>` : tripNo ? `<p class="hint" style="margin:0"><b>Trip no.</b> ${esc(tripNo)}</p>` : ""}
+      ${slot ? `<p class="hint" style="margin:0"><b>Train slot</b> ${esc(slot)} · run T${esc(slot.padStart(3, "0"))}</p>` : tripNo ? `<p class="hint" style="margin:0"><b>Trip no.</b> ${esc(tripNo)}</p>` : ""}
+      ${slot && window.spotSetHTML ? spotSetHTML(x.line, slot, T.now.iso) : ""}
       ${depot ? `<p class="hint" style="margin:0"><span class="sb">${esc(depot.kind)}</span> at ${esc(depot.station)} · scheduled gap ${Math.round(depot.gapSec/60)} min · confidence ${depot.confidence}%</p>` : ""}
       <div class="hfacts">
         <div><span>Bound</span><b>${esc(full)}</b><small>direction of travel</small></div>
@@ -8954,7 +8955,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     const f = (FLEET[x.line] || []).filter(m => m[5] !== "soon");
     const list = f.map(([m, mk, cars, n, yr]) => `<button type="button" data-hx="model" data-m="${esc(m)}"><b>${esc(m)}</b><span>${esc(mk)} · ${typeof cars === "number" ? `${cars} cars` : `${esc(cars)} cars`}${n ? ` · ${n} in service` : ""}${yr ? ` · since ${yr}` : ""}${H_MODEL[m] ? " · history ›" : ""}</span></button>`).join("");
     return `${list ? `<div><p class="hsub">Train model</p><div class="hx-models">${list}</div><p class="hint">${f.length > 1 ? "Any of these can be running this train; operators don't publish which set is which." : ""}</p></div>` : ""}
-      <div class="mi-act"><button class="btn" type="button" data-sp="open" data-x="${esc(JSON.stringify({type: "train", line: x.line, id: x.id}))}">Log sighting</button><button class="btn ghost" type="button" data-hx="line">Open on Line Board</button></div>
+      <div class="mi-act"><button class="btn" type="button" data-sp="open" data-x="${esc(JSON.stringify({type: "train", line: x.line, id: x.id}))}">Spot this train</button><button class="btn ghost" type="button" data-hx="line">Open on Line Board</button></div>
       <div class="sp-box" id="hxLog" hidden></div>`;
   }
   function head(x){
@@ -9257,6 +9258,17 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
   };
 
   /* ===== Spotter's log and badges ===== */
+  /* Train set numbers, the way trainspotters (and SGTrains) write them, by line group. */
+  const SET_GROUP = {NSL: "nsew", EWL: "nsew", CG: "nsew", NEL: "nel", CCL: "ccl", DTL: "dtl", TEL: "tel", BP: "bp", SE: "sp", SW: "sp", PE: "sp", PW: "sp", SEN: "sen"};
+  const SET_FMT = {
+    nsew: {ph: "e.g. 601/602", re: "\\s*\\d{3,4}\\s*/\\s*\\d{3,4}\\s*", tip: "Both car numbers of the set, e.g. 601/602"},
+    dtl: {ph: "e.g. 9001", re: "\\s*\\d{4}\\s*", tip: "The set's 4-digit number, e.g. 9001"},
+    "": {ph: "Set number", re: ".{1,16}", tip: "The set number as written on the train"}
+  };
+  /* SGTrains' running-status page for each line group (opened in the browser; the app doesn't read it). */
+  const SG_PAGE = {nsew: "https://spotters.sgtrains.com/spotting-train-nsewl", dtl: "https://spotters.sgtrains.com/spotting-train-dtl",
+    sp: "https://spotters.sgtrains.com/spotting-train-splrt", sen: "https://spotters.sgtrains.com/spotting-train-se"};
+  const normSet = v => String(v || "").trim().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ").slice(0, 16);
   const SP_KEY = "mrt.spots";
   let spots = store.get(SP_KEY, []); if (!Array.isArray(spots)) spots = [];
   const saveSpots = () => store.set(SP_KEY, spots);
@@ -9286,12 +9298,15 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     // which train this is, so the map can tag it while it runs: its id for today's service, plus line, direction and
     // departure time as a fallback if the id changes (e.g. the timetable finishes loading)
     const tk = T ? esc(JSON.stringify({id: T.t.id, day: T.now.iso, dir: T.t.dir, dep: Number.isFinite(T.t.dep) ? Math.round(T.t.dep * 10) / 10 : null})) : "";
-    return `<form class="sp-form" data-line="${esc(x.line)}" data-sb="${T && T.sb ? esc(T.to) : ""}" data-tk="${tk}">
+    const slot = T && T.t.ref && window.ttSlotOf ? ttSlotOf(T.t.ref.tid) : "", fs = SET_FMT[SET_GROUP[x.line] || ""] || SET_FMT[""];
+    return `<form class="sp-form" data-line="${esc(x.line)}" data-sb="${T && T.sb ? esc(T.to) : ""}" data-tk="${tk}" data-slot="${esc(slot)}" data-dir="${T ? esc(T.full) : ""}">
+      ${slot || T ? `<p class="hint" style="margin:0">${slot ? `<b>Train slot ${esc(slot)}</b> (run T${esc(slot.padStart(3, "0"))}) · ` : ""}${x.line === "CG" ? "CGL" : esc(x.line)}${T ? ` · towards ${esc(T.full)}` : ""}</p>` : ""}
       <div class="sp-kind" role="radiogroup" aria-label="What happened"><label><input type="radio" name="spk" value="spot" checked><span>Spotted</span></label><label><input type="radio" name="spk" value="ride"><span>Rode</span></label></div>
-      <label class="rt-f"><span>Model</span><select name="model">${ms.map(m => `<option>${esc(m)}</option>`).join("")}<option value="">Not sure</option></select></label>
+      <label class="rt-f"><span>Fleet / set</span><input name="set" maxlength="16" placeholder="${esc(fs.ph)}" pattern="${esc(fs.re)}" title="${esc(fs.tip)}" autocomplete="off" inputmode="text"></label>
+      <label class="rt-f"><span>Model</span><select name="model"><option value="" selected>Not sure</option>${ms.map(m => `<option>${esc(m)}</option>`).join("")}</select></label>
       <label class="rt-f"><span>Station</span><select name="st">${names.map(n => `<option${n === here ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
       <label class="rt-f"><span>Time</span><input name="time" type="time" value="${t}"></label>
-      <label class="rt-f sp-note"><span>Note</span><input name="note" maxlength="120" placeholder="Optional, e.g. set number or livery" autocomplete="off"></label>
+      <label class="rt-f sp-note"><span>Note</span><input name="note" maxlength="120" placeholder="Optional, e.g. livery or where you saw it" autocomplete="off"></label>
       ${T && T.sb ? `<p class="hint" style="margin:0">Special-bound: ends at ${esc(T.to)}.</p>` : ""}
       <div class="mi-act"><button class="btn" type="submit">Save sighting</button><button class="btn ghost" type="button" data-sp="cancel">Cancel</button></div>
     </form>`;
@@ -9315,7 +9330,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     let tk = null; try { tk = f.dataset.tk ? JSON.parse(f.dataset.tk) : null; } catch(err){}
     if (tk) tk = anchorLink(f.dataset.line, tk, String(fd.get("st") || ""), at, fd.get("spk") === "ride" ? "ride" : "spot");
     spots.unshift({id: Date.now().toString(36), at, line: f.dataset.line, model: String(fd.get("model") || ""), st: String(fd.get("st") || ""),
-      note: String(fd.get("note") || "").trim().slice(0, 120), kind: fd.get("spk") === "ride" ? "ride" : "spot", sb: f.dataset.sb || "", ...(tk ? {tk} : {})});
+      note: String(fd.get("note") || "").trim().slice(0, 120), kind: fd.get("spk") === "ride" ? "ride" : "spot", sb: f.dataset.sb || "",
+      set: normSet(fd.get("set")), slot: f.dataset.slot || "", dir: f.dataset.dir || "", ...(tk ? {tk} : {})});
     if (spots.length > 2000) spots.length = 2000;
     saveSpots(); tagIdx = null; spVer++;
     const box = $("hxLog"); box.innerHTML = `<p class="sp-ok">Saved to your Spotter's log · ${spots.length} sighting${spots.length === 1 ? "" : "s"}</p><div class="mi-act"><button class="btn ghost" type="button" data-sp="log">Open Spotter's log</button></div>`;
@@ -9341,13 +9357,13 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
         <select data-spf="line" aria-label="Line">${opt("", F.line, "All lines")}${lines.map(c => opt(c, F.line, lineFull(c))).join("")}</select>
         <select data-spf="model" aria-label="Model">${opt("", F.model, "All models")}${models.map(m => opt(m, F.model, m)).join("")}</select>
         <select data-spf="kind" aria-label="Spotted or rode">${opt("", F.kind, "Spotted & rode")}${opt("spot", F.kind, "Spotted")}${opt("ride", F.kind, "Rode")}</select></div>` : ""}
-      <div class="sp-list">${list.length ? list.map(s => `<div class="sp-item" style="--c:var(--${esc(s.line)})"><div class="sp-h">${LINES[s.line] ? chip(s.line) : ""}<b>${esc(s.model || "Model not sure")}</b>${s.kind === "ride" ? `<span class="sp-tag">rode</span>` : ""}${s.sb ? `<span class="sb">to ${esc(s.sb)}</span>` : ""}<button type="button" data-spdel="${esc(s.id)}" aria-label="Delete this sighting">×</button></div>
+      <div class="sp-list">${list.length ? list.map(s => `<div class="sp-item" style="--c:var(--${esc(s.line)})"><div class="sp-h">${LINES[s.line] ? chip(s.line) : ""}<b>${esc(s.set ? s.set + (s.model ? " · " + s.model : "") : s.model || "Model not sure")}</b>${s.kind === "ride" ? `<span class="sp-tag">rode</span>` : ""}${s.sb ? `<span class="sb">to ${esc(s.sb)}</span>` : ""}<button type="button" data-spdel="${esc(s.id)}" aria-label="Delete this sighting">×</button></div>
           <span>${esc(s.st)} · ${esc(hm24(s.at))}</span>${s.note ? `<span class="sp-n">${esc(s.note)}</span>` : ""}</div>`).join("")
-        : `<div class="fav-empty"><b>${spots.length ? "No sightings match" : "No sightings yet"}</b><p>${spots.length ? "Try other filters." : "Tap a train on the map, then Log sighting. Sightings stay on this phone."}</p></div>`}</div>`;
+        : `<div class="fav-empty"><b>${spots.length ? "No sightings match" : "No sightings yet"}</b><p>${spots.length ? "Try other filters." : "Tap a train on the map, then Spot this train. Sightings stay on this phone."}</p></div>`}</div>`;
   }
   function spotRender(){ const r = $("spotRoot"); if (r) setHTML(r, spotHTML()); }
   function exportText(){
-    return "My MRT Spotter's log\n" + spots.map(s => `${hm24(s.at)} · ${lineLabel(s.line)} · ${s.model || "model not sure"} · ${s.st}${s.kind === "ride" ? " · rode" : ""}${s.sb ? " · to " + s.sb : ""}${s.note ? " · " + s.note : ""}`).join("\n");
+    return "My MRT Spotter's log\n" + spots.map(s => `${hm24(s.at)} · ${lineLabel(s.line)}${s.set ? " · " + s.set : ""}${s.slot ? " · slot " + s.slot : ""} · ${s.model || "model not sure"} · ${s.st}${s.kind === "ride" ? " · rode" : ""}${s.sb ? " · to " + s.sb : ""}${s.note ? " · " + s.note : ""}`).join("\n");
   }
   async function exportLog(){
     const t = exportText();
@@ -9462,13 +9478,31 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       }
     }
     const A = anchors(line, iso), a = A.tag.size ? A.tag.get(t.id) : null; if (a) return a;
-    if (!tagIdx.n) return null;
-    return tagIdx.id.get(line + "|" + t.id) || (Number.isFinite(t.dep) && tagIdx.dep.get(depKey(line, t.dir, t.dep))) || null;
+    const own = tagIdx.n ? tagIdx.id.get(line + "|" + t.id) || (Number.isFinite(t.dep) && tagIdx.dep.get(depKey(line, t.dir, t.dep))) || null : null;
+    if (own) return own;
+    // a set you spotted on this train's slot earlier today: the same train, on a later trip (after turning back)
+    const slot = t.ref && t.ref.tid ? ttSlotOf(t.ref.tid) : "";
+    return slot ? window.spotSetFor(line, slot, iso) : null;
   };
   // the train sheet's line: "You logged: C151C · spotted at Bishan 7.12pm · note"
+  /* Which train set is running a train slot today, from sightings on this phone (Spot this train). The slot keeps
+     the same train all day, so a set spotted on slot 420 this morning is still slot 420 this afternoon (unless it's
+     swapped, so the time it was spotted is shown). The latest sighting wins. */
+  const sgDay = at => new Date(at + 8 * 3600e3).toISOString().slice(0, 10);              // the day in Singapore, like sgNow().iso
+  window.spotSetFor = (line, slot, iso) => {
+    if (!slot) return null;
+    for (const s of spots) if (s.set && s.slot === slot && s.line === line && sgDay(s.at) === iso) return s;   // newest first
+    return null;
+  };
+  window.spotSetHTML = (line, slot, iso) => {
+    const s = window.spotSetFor(line, slot, iso), run = "T" + String(slot).padStart(3, "0");
+    const sg = SG_PAGE[SET_GROUP[line] || ""] || "https://spotters.sgtrains.com/";
+    const mine = s ? `<p class="hint" style="margin:0"><b>${esc(s.set)}</b>${s.model ? ` · ${esc(s.model)}` : ""} · spotted ${esc(hm24(s.at))} at ${esc(s.st)} <span class="sb">app spotting</span></p>` : "";
+    return `${mine}<p class="hint" style="margin:0"><a href="${esc(sg)}" target="_blank" rel="noopener">Look up run ${esc(run)} on SGTrains</a> (opens in your browser)</p>`;
+  };
   window.spotTagHTML = (line, t, iso) => {
     const s = window.spotTag(line, t, iso); if (!s) return "";
-    return `<p class="sp-you"><i aria-hidden="true">${s.kind === "ride" ? "★" : "◉"}</i><span><b>You logged:</b> ${esc(s.model || "model not sure")} · ${s.kind === "ride" ? "rode" : "spotted"} at ${esc(s.st)} ${esc(hm24(s.at))}${s.note ? ` · ${esc(s.note)}` : ""}${anchors(line, iso).tag.get(t.id) === s ? `<small>Position set from your sighting</small>` : ""}</span></p>`;
+    return `<p class="sp-you"><i aria-hidden="true">${s.kind === "ride" ? "★" : "◉"}</i><span><b>You logged:</b> ${esc(s.set ? s.set + (s.model ? " · " + s.model : "") : s.model || "model not sure")} · ${s.kind === "ride" ? "rode" : "spotted"} at ${esc(s.st)} ${esc(hm24(s.at))}${s.note ? ` · ${esc(s.note)}` : ""}${anchors(line, iso).tag.get(t.id) === s ? `<small>Position set from your sighting</small>` : ""}</span></p>`;
   };
 })();
 </script>

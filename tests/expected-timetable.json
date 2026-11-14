@@ -616,31 +616,31 @@
           "from": 0,
           "count": 33,
           "t": 210,
-          "headway": 4.7212
+          "headway": 4.8727
         },
         {
           "from": 420,
           "count": 73,
           "t": 495,
-          "headway": 2.1342
+          "headway": 2.2027
         },
         {
           "from": 570,
           "count": 33,
           "t": 795,
-          "headway": 4.7212
+          "headway": 4.8727
         },
         {
           "from": 1020,
           "count": 73,
           "t": 1110,
-          "headway": 2.1342
+          "headway": 2.2027
         },
         {
           "from": 1200,
           "count": 44,
           "t": 1320,
-          "headway": 3.5409
+          "headway": 3.6545
         }
       ],
       "saturday": [
@@ -648,19 +648,19 @@
           "from": 0,
           "count": 35,
           "t": 210,
-          "headway": 4.4514
+          "headway": 4.5943
         },
         {
           "from": 420,
           "count": 40,
           "t": 495,
-          "headway": 3.895
+          "headway": 4.02
         },
         {
           "from": 570,
           "count": 35,
           "t": 1005,
-          "headway": 4.4514
+          "headway": 4.5943
         }
       ],
       "sunday": [
@@ -668,19 +668,19 @@
           "from": 0,
           "count": 28,
           "t": 510,
-          "headway": 5.5643
+          "headway": 5.7429
         },
         {
           "from": 1020,
           "count": 33,
           "t": 1110,
-          "headway": 4.7212
+          "headway": 4.8727
         },
         {
           "from": 1200,
           "count": 11,
           "t": 1320,
-          "headway": 14.1636
+          "headway": 14.6182
         }
       ],
       "publicHoliday": [
@@ -688,13 +688,13 @@
           "from": 0,
           "count": 18,
           "t": 510,
-          "headway": 8.6556
+          "headway": 8.9333
         },
         {
           "from": 1020,
           "count": 19,
           "t": 1230,
-          "headway": 8.2
+          "headway": 8.4632
         }
       ],
       "holidayEve": [
@@ -702,19 +702,19 @@
           "from": 0,
           "count": 35,
           "t": 210,
-          "headway": 4.4514
+          "headway": 4.5943
         },
         {
           "from": 420,
           "count": 40,
           "t": 495,
-          "headway": 3.895
+          "headway": 4.02
         },
         {
           "from": 570,
           "count": 35,
           "t": 1005,
-          "headway": 4.4514
+          "headway": 4.5943
         }
       ]
     },

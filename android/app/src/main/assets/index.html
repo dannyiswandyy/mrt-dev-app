@@ -987,6 +987,9 @@ select,input[type="time"],input[type="text"],textarea{
 .dirrow .to{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dirrow .fl{font-size:11px;opacity:.6;font-weight:500}
 .sp-sets{display:grid;gap:6px}
+.lrns{display:grid;gap:4px;margin-top:6px;font-size:13px}
+.lrn{display:grid;grid-template-columns:1fr auto;gap:0 8px;padding:6px 8px;border-left:4px solid var(--c);border-bottom:1px solid var(--soft)}
+.lrn small{grid-column:1/-1;opacity:.6}
 .sp-sets button{display:flex;justify-content:space-between;gap:8px;align-items:center;text-align:left;padding:8px 10px;border:1px solid var(--soft);border-left:4px solid var(--c);border-radius:10px;background:none;color:inherit;font:inherit}
 .sp-sets button.on{outline:2px solid var(--c)}
 .sp-sets span{font-size:12px;opacity:.7}
@@ -2230,6 +2233,7 @@ function ttSched(code, r, sec, mv){
     return {sec: r.s + (w > 0 ? S[j] + (e - R[j]) * rate : S[j + 1]), rate: rate || 1};
   }
   if (m) return {sec: sec - m * 60, rate: 1};
+  sec -= ttLearned(code, r);                                    // what your sightings say this line runs like at this hour
   const tl = ttLateStart(code, r, mv); if (!tl) return {sec, rate: 1};
   const e = sec - r.s, rate = r.p.end / (r.p.end - tl);
   return {sec: r.s + (e < tl ? e - tl : (e - tl) * rate), rate};
@@ -2284,13 +2288,19 @@ function rtProfileFor(code, r, m){
   rtProfCache.set(r, {v: rtVer, p: prof});
   return prof;
 }
+/* Seconds a line runs late (+) or early (-) against the timetable at this hour, learned from your sightings
+   (window.learnedLate, in the Spotter's log module); 0 until there are enough of them. Used for trains LTA's live
+   feed says nothing about. */
+function ttLearned(code, r){
+  try { return window.learnedLate ? window.learnedLate(code, r.p.d > 0 ? 0 : 1) * 60 : 0; } catch(e){ return 0; }
+}
 /* When a run gets to the stop `k` stops along it, in clock time (seconds): the other way round from ttSched. */
 function ttAt(code, r, k, mv){
   const m = mv && mv.get(`${code}t${r.s}p${r.pi}`), pr = rtProfileFor(code, r, m);
   if (pr) return r.s + pr.R[2 * k];
   if (m) return r.s + r.p.arr[k] + m * 60;
-  const tl = ttLateStart(code, r, mv);
-  return tl ? r.s + tl + r.p.arr[k] * (r.p.end - tl) / r.p.end : r.s + r.p.arr[k];
+  const tl = ttLateStart(code, r, mv), lo = ttLearned(code, r);
+  return lo + (tl ? r.s + tl + r.p.arr[k] * (r.p.end - tl) / r.p.end : r.s + r.p.arr[k]);
 }
 function ttTrainsOn(code, now, list){
   const late = [camAdj(code, 0) * 60, camAdj(code, 1) * 60], mv = moved(code, now.iso), out = [];
@@ -9449,9 +9459,10 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     }
     let tk = null; try { tk = f.dataset.tk ? JSON.parse(f.dataset.tk) : null; } catch(err){}
     if (tk) tk = anchorLink(f.dataset.line, tk, String(fd.get("st") || ""), at, fd.get("spk") === "ride" ? "ride" : "spot");
+    const lo = tk ? learnFrom(f.dataset.line, tk, String(fd.get("st") || ""), at, fd.get("spk") === "ride" ? "ride" : "spot") : null;
     spots.unshift({id: Date.now().toString(36), at, line: f.dataset.line, model: String(fd.get("model") || ""), st: String(fd.get("st") || ""),
       note: String(fd.get("note") || "").trim().slice(0, 120), kind: fd.get("spk") === "ride" ? "ride" : "spot", sb: f.dataset.sb || "",
-      set: normSet(fd.get("set")), slot: f.dataset.slot || "", dir: f.dataset.dir || "", ...(tk ? {tk} : {})});
+      set: normSet(fd.get("set")), slot: f.dataset.slot || "", dir: f.dataset.dir || "", ...(tk ? {tk} : {}), ...(lo ? {lo} : {})});
     if (spots.length > 2000) spots.length = 2000;
     saveSpots(); tagIdx = null; spVer++;
     const box = $("hxLog"); box.innerHTML = `<p class="sp-ok">Saved to your Spotter's log · ${spots.length} sighting${spots.length === 1 ? "" : "s"}</p><div class="mi-act"><button class="btn ghost" type="button" data-sp="log">Open Spotter's log</button></div>`;
@@ -9480,6 +9491,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
       <div class="hm-h"><h2>Badges</h2></div>
       <div class="sp-badges">${got.map(b => `<div class="sp-badge${b.done ? " on" : ""}" title="${esc(b.desc)}"><i>${esc(BADGE_IC[b.id] || "★")}</i><b>${esc(b.name)}</b><span>${b.done ? "Earned" : `${b.have}/${b.of}`} · ${esc(b.desc)}</span></div>`).join("")}</div>
       ${setsHTML()}
+      ${learnHTML()}
       <div class="hm-h"><h2>Sightings${F.set ? ` of ${esc(F.set)}` : ""}</h2><button type="button" data-spv="export"${spots.length ? "" : " disabled"}>Export</button></div>
       ${spMsg ? `<p class="sp-ok">${esc(spMsg)}</p>` : ""}
       ${spots.length ? `<div class="sp-filt">
@@ -9510,6 +9522,7 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     if (d && confirm("Delete this sighting?")){ spots = spots.filter(s => s.id !== d.dataset.spdel); saveSpots(); tagIdx = null; spVer++; mDirty = true; spotRender(); hmSub(); }
   });
   $("spotRoot").addEventListener("change", e => {
+    if (e.target.id === "learnOn"){ learnOn = e.target.checked; store.set(LEARN_KEY, learnOn); mDirty = true; return; }
     const f = e.target.closest("[data-spf]"); if (!f) return;
     F[f.dataset.spf] = f.value; if (f.dataset.spf === "line") F.model = ""; spMsg = ""; spotRender();
   });
@@ -9562,6 +9575,61 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
     return out;
   }
   const stIndex = (code, name, iso) => activeStations(LINES[code], iso).findIndex(x => x[1] === name);
+
+  /* ---- Learned timing ----
+     Each sighting of a train the app could identify is compared with the timetable (the same comparison as
+     anchorRuns: LTA's times, with the slower-trains setting, before any live delay). Over the last 60 days,
+     sightings on a line, one way, in one hour of the day give how late that line usually runs then. With at
+     least 3 sightings, trains LTA's live feed says nothing about are moved by that much (at most 5 min).
+     On the North-South Line that's a correction to the fixed SLOW setting, by time of day. Trains LTA reports
+     on are left to LTA. You can turn it off in the Spotter's log. */
+  const LEARN_KEY = "mrt.learn", LEARN_MIN = 3, LEARN_MAX = 5, LEARN_DAYS = 60;
+  let learnOn = store.get(LEARN_KEY, true) !== false;
+  function learnFrom(code, tk, stName, at, kind){
+    try {
+      if (!tk || !tk.anc || !ttTrips(code, tk.day)) return null;
+      const st = stIndex(code, stName, tk.day); if (st < 0) return null;
+      const run = anchorRuns(code, tk.dir, st, svcMins(at), kind, tk.day).find(r => r.id === tk.id); if (!run) return null;
+      const mv = window.rtShifts ? window.rtShifts(code, tk.day) : null;
+      if (mv && mv.has(tk.id)) return null;                        // LTA had a live delay for it: not the usual timing
+      const r = ttTrips(code, tk.day).find(x => `${code}t${x.s}p${x.pi}` === tk.id);
+      if (r && rtProfileFor(code, r, null)) return null;
+      return {d: tk.dir, h: Math.floor(svcMins(at) / 60) % 24, off: Math.round(run.shift * 100) / 100};
+    } catch(e){ return null; }
+  }
+  let learnCache = null;
+  function learnTable(){
+    if (learnCache && learnCache.ver === spVer) return learnCache.t;
+    const since = Date.now() - LEARN_DAYS * 864e5, by = {};
+    for (const s of spots){
+      if (!s.lo || s.at < since || !Number.isFinite(s.lo.off)) continue;
+      (by[s.line + "|" + s.lo.d + "|" + s.lo.h] ||= []).push(s.lo.off);
+    }
+    const t = {};
+    for (const [k, v] of Object.entries(by)){
+      const a = v.slice().sort((x, y) => x - y), med = a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2;
+      t[k] = {n: a.length, off: Math.max(-LEARN_MAX, Math.min(LEARN_MAX, med))};
+    }
+    learnCache = {ver: spVer, t};
+    return t;
+  }
+  window.learnedLate = (code, dir) => {
+    if (!learnOn || SIM.est) return 0;
+    const b = learnTable()[code + "|" + dir + "|" + Math.floor(sgNow().mins / 60) % 24];
+    return b && b.n >= LEARN_MIN ? b.off : 0;
+  };
+  function learnHTML(){
+    const t = learnTable(), rows = Object.entries(t).sort((a, b) => a[0].localeCompare(b[0]));
+    if (!rows.length) return "";
+    const act = c => activeStations(LINES[c], sgNow().iso);
+    const hr = h => { const x = h % 12 || 12; return `${x}${h < 12 ? "am" : "pm"}`; };
+    const list = rows.map(([k, v]) => { const [c, d, h] = k.split("|"); const L = LINES[c]; if (!L) return "";
+      return `<div class="lrn" style="--c:var(--${c})"><span>${esc(c === "CG" ? "CGL" : c)} towards ${esc(dest(L, +d, act(c)))} · ${hr(+h)}–${hr(+h + 1)}</span><b>${v.n >= LEARN_MIN ? `${v.off > 0 ? "+" : ""}${v.off.toFixed(1)} min` : "learning"}</b><small>${v.n} sighting${v.n === 1 ? "" : "s"}</small></div>`; }).join("");
+    return `<div class="hm-h"><h2>Learned timing</h2></div>
+      <p class="hint" style="margin:0 0 6px">From your sightings: how late (+) or early (−) each line runs at each hour compared with the timetable. Used for trains LTA's live feed says nothing about, once there are ${LEARN_MIN} sightings.</p>
+      <label class="toggle"><input type="checkbox" id="learnOn"${learnOn ? " checked" : ""}> Use learned timing</label>
+      <div class="lrns">${list}</div>`;
+  }
   // at save: keep the train you picked if it fits; if it can't have been at that station then (more than
   // ANCHOR_MAX minutes off, or its trip doesn't stop there), link the one going the same way that was nearest to it
   function anchorLink(code, tk, stName, at, kind){

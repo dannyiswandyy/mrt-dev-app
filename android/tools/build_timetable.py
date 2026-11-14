@@ -118,47 +118,34 @@ def http(url, headers=None, tries=3):
             time.sleep(3 * (attempt + 1))
 
 def find_link(o):
-    """Extract the fresh signed GTFS URL from LTA JSON/Atom/XML responses."""
-    # First handle the actual JSON object returned by DataMall.
-    if isinstance(o, bytes):
-        raw = o.decode("utf-8", "replace")
+    """The temporary (signed) GTFS download link from LTA's answer: JSON {"value": [{"link": ...}]}, or Atom/XML."""
+    raw = o.decode("utf-8", "replace") if isinstance(o, (bytes, bytearray)) else o if isinstance(o, str) else None
+    if raw is not None:
         try:
             return find_link(json.loads(raw))
-        except Exception:
+        except ValueError:
             pass
-    elif isinstance(o, str):
-        raw = html.unescape(o)
-        # A bare URL.
-        if raw.startswith("https://") and "gtfs" in raw.lower():
-            return raw.strip()
-        # Atom/XML <link>https://...</link> or href="https://..."
-        m = re.search(r"<link[^>]*>\s*(https://[^<]+)\s*</link>", raw, re.I)
-        if m:
-            return html.unescape(m.group(1).strip())
-        m = re.search(r"<link[^>]+href=[\"'](https://[^\"']+)[\"'][^>]*/?>", raw, re.I)
-        if m:
-            return html.unescape(m.group(1).strip())
-        # Fallback: locate any HTTPS URL containing "gtfs".
+        raw = html.unescape(raw).replace("\\u0026", "&").replace("\\/", "/")
         m = re.search(r"https://[^\s<>\"']*gtfs[^\s<>\"']*", raw, re.I)
-        if m:
-            return m.group(0).strip()
-        return None
-
+        return m.group(0) if m else None
     if isinstance(o, dict):
-        # LTA's current JSON shape is:
-        # {"odata.metadata": "...", "value": [{"timestamp": "...", "Link": "..."}]}
         for k, v in o.items():
-            if k.lower() == "link" and isinstance(v, str) and v.startswith("https://"):
-                return v.strip()
-            r = find_link(v)
+            if k.lower() in ("link", "url", "href") and isinstance(v, str) and v.startswith("https://"):
+                return v
+        for v in o.values():
+            r = find_link(v) if isinstance(v, (dict, list)) else None
             if r:
                 return r
     elif isinstance(o, list):
         for v in o:
-            r = find_link(v)
+            r = find_link(v) if isinstance(v, (dict, list)) else None
             if r:
                 return r
     return None
+
+def hide_signature(text):
+    """A signed link with its signature parts hidden, for the build log."""
+    return re.sub(r"(?i)(X-Amz-(?:Signature|Credential|Security-Token)=)[^&\s\"<]+", r"\1[REDACTED]", text)
 
 # ---------- station matching ----------
 def norm(s):
@@ -308,7 +295,7 @@ def main():
             link = find_link(meta)
             if not link:
                 preview = meta.decode("utf-8", "replace")[:500].replace("\\n", " ")
-                say("LTA metadata did not contain a detectable GTFS URL. Response preview: " + re.sub(r'(?i)(X-Amz-[^=]+)=([^&\\s<]+)', r'\\1=[REDACTED]', preview))
+                say("LTA metadata did not contain a detectable GTFS URL. Response preview: " + hide_signature(preview))
                 raise ValueError("LTA returned no GTFS download link")
             say(f"LTA returned a temporary GTFS Schedule download link (attempt {attempt}/3); downloading it immediately.")
             # Do not add query parameters or rewrite/URL-decode the signed URL.

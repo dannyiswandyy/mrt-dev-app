@@ -118,25 +118,38 @@ def http(url, headers=None, tries=3):
             time.sleep(3 * (attempt + 1))
 
 def find_link(o):
-    """Extract the fresh signed GTFS URL from LTA's JSON or Atom/XML response."""
+    """Extract the fresh signed GTFS URL from LTA JSON/Atom/XML responses."""
+    # First handle the actual JSON object returned by DataMall.
     if isinstance(o, bytes):
         raw = o.decode("utf-8", "replace")
+        try:
+            return find_link(json.loads(raw))
+        except Exception:
+            pass
     elif isinstance(o, str):
-        raw = o
-    else:
-        raw = ""
-
-    # DataMall currently returns an Atom/XML feed for these GTFS endpoints in
-    # some responses, even when JSON is requested. Search the raw response for
-    # the actual HTTPS URL rather than depending on one response shape.
-    if raw:
-        raw = html.unescape(raw)
-        matches = re.findall(r"https://[^\\s<>\"']*gtfs[^\\s<>\"']*", raw, re.I)
-        if matches:
-            return matches[0].strip()
+        raw = html.unescape(o)
+        # A bare URL.
+        if raw.startswith("https://") and "gtfs" in raw.lower():
+            return raw.strip()
+        # Atom/XML <link>https://...</link> or href="https://..."
+        m = re.search(r"<link[^>]*>\s*(https://[^<]+)\s*</link>", raw, re.I)
+        if m:
+            return html.unescape(m.group(1).strip())
+        m = re.search(r"<link[^>]+href=[\"'](https://[^\"']+)[\"'][^>]*/?>", raw, re.I)
+        if m:
+            return html.unescape(m.group(1).strip())
+        # Fallback: locate any HTTPS URL containing "gtfs".
+        m = re.search(r"https://[^\s<>\"']*gtfs[^\s<>\"']*", raw, re.I)
+        if m:
+            return m.group(0).strip()
+        return None
 
     if isinstance(o, dict):
-        for v in o.values():
+        # LTA's current JSON shape is:
+        # {"odata.metadata": "...", "value": [{"timestamp": "...", "Link": "..."}]}
+        for k, v in o.items():
+            if k.lower() == "link" and isinstance(v, str) and v.startswith("https://"):
+                return v.strip()
             r = find_link(v)
             if r:
                 return r

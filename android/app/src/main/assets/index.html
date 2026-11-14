@@ -2128,6 +2128,7 @@ function ttState(r, sec){
    Gives {next: Map(run → its next run), prev: Map(run → the run before it)}, worked out once per day's list. */
 const TT_LAYOVER_MAX = 15 * 60;            // a longer wait than this: the train goes off to the depot instead
 const TT_LAYOVER_EARLY = 6 * 60;           // the next run can start a little before this one gets in (slower trains, see SLOW)
+const TT_TURN_MIN = 46;                    // a train stays at the end of its run at least as long as ttState shows it there (45 s), and a second more
 function ttSlotOf(tid){
   const q = String(tid || "").split("_"), n = q.length;
   return n >= 4 && /^\d+$/.test(q[n - 1]) && /^\d+$/.test(q[n - 2]) ? String(+q[n - 2]) : "";
@@ -2156,16 +2157,41 @@ function ttLinks(list){
       if (b){ next.set(a, b); prev.set(b, a); }
     }
   }
+  // A train can't start its next run before it gets in. With SLOW, North-South Line trains reach the end a few
+  // minutes after LTA's time, so their next run leaves that much late (r.tl, seconds) and makes the time up along
+  // the way, getting to the other end on time (see ttSched). Without this the same train showed twice for a few
+  // minutes, arriving and already leaving. Only on lines with train slots: the LRT's links are a best guess.
+  if (slotted) for (const r of list){
+    const a = prev.get(r);
+    r.tl = a ? Math.max(0, Math.min(TT_LAYOVER_EARLY + TT_TURN_MIN, gets(a) + TT_TURN_MIN - r.s, r.p.end / 2)) : 0;
+  }
   return list.links = {next, prev};
+}
+/* Where a run is in its own timetable (seconds since the service day began) at clock time `sec`, and how fast
+   that timetable goes by (1: as LTA has it). LTA's live delay or a Live cam correction moves the whole run;
+   otherwise a run that has to wait for its train (r.tl) leaves late and catches up by the end of the run. */
+function ttSched(code, r, sec, mv){
+  const m = mv && mv.get(`${code}t${r.s}p${r.pi}`);
+  if (m) return {sec: sec - m * 60, rate: 1};
+  const tl = r.tl || 0; if (!tl) return {sec, rate: 1};
+  const e = sec - r.s, rate = r.p.end / (r.p.end - tl);
+  return {sec: r.s + (e < tl ? e - tl : (e - tl) * rate), rate};
+}
+/* When a run gets to the stop `k` stops along it, in clock time (seconds): the other way round from ttSched. */
+function ttAt(code, r, k, mv){
+  const m = mv && mv.get(`${code}t${r.s}p${r.pi}`);
+  if (m) return r.s + r.p.arr[k] + m * 60;
+  const tl = r.tl || 0;
+  return tl ? r.s + tl + r.p.arr[k] * (r.p.end - tl) / r.p.end : r.s + r.p.arr[k];
 }
 function ttTrainsOn(code, now, list){
   const late = [camAdj(code, 0) * 60, camAdj(code, 1) * 60], mv = moved(code, now.iso), out = [];
   const early = mv ? Math.min(0, ...mv.values()) * 60 : 0, last = now.mins * 60 - Math.min(late[0], late[1]) - early;
   const links = ttLinks(list), runId = r => `${code}t${r.s}p${r.pi}`;
-  const secOf = r => now.mins * 60 - late[r.p.d > 0 ? 0 : 1] - (mv ? (mv.get(runId(r)) || 0) * 60 : 0);
+  const schedOf = r => ttSched(code, r, now.mins * 60 - late[r.p.d > 0 ? 0 : 1], mv), secOf = r => schedOf(r).sec;
   for (const r of list){
     if (r.s > last) break;
-    const sec = secOf(r), st = ttState(r, sec), pr = links.prev.get(r);
+    const sc = schedOf(r), sec = sc.sec, st = ttState(r, sec), pr = links.prev.get(r);
     if (!st){
       // the run is over: if the same train does another run from here, it stays at the platform, now facing
       // the way it'll go next, until that run leaves (then that run's own entry below takes over, same id)
@@ -2179,7 +2205,7 @@ function ttTrainsOn(code, now, list){
     }
     const p = r.p, nk = st.at ? st.k : st.k + 1;
     out.push({id: runId(r), prev: pr ? runId(pr) : undefined, dir: p.d > 0 ? 0 : 1, dep: r.s / 60, ref: r, idx: st.idx, to: p.to,
-      next: p.f + p.d * nk, eta: Math.max(0, (r.s + p.arr[nk] - sec) / 60), atStation: st.at});
+      next: p.f + p.d * nk, eta: Math.max(0, (r.s + p.arr[nk] - sec) / 60 / sc.rate), atStation: st.at});
   }
   return out;
 }
@@ -2189,12 +2215,13 @@ function trainById(list, id){
 }
 function ttNext(list, s, dir, now, count, reach){
   const sec = now.mins * 60 - camAdj(list.code, dir) * 60, res = [], mv = moved(list.code, now.iso);
+  ttLinks(list);                                           // works out each run's lateness from the run before (r.tl)
   for (const r of list){
     const p = r.p; if ((p.d > 0 ? 0 : 1) !== dir) continue;
     const k = (s - p.f) * p.d;
     if (k < 0 || k > p.arr.length - 1 || (k === p.arr.length - 1 && !(LINES[list.code].bound && p.to === -1))) continue;   // a Circle Line loop run goes on round from its last stop here
     if (reach != null && (reach - p.f) * p.d > p.arr.length - 1) continue;
-    const t = r.s + p.arr[k] + (mv ? (mv.get(`${list.code}t${r.s}p${r.pi}`) || 0) * 60 : 0);
+    const t = ttAt(list.code, r, k, mv);
     if (t >= sec - 10) res.push({m: (t - sec) / 60, to: p.to});
   }
   res.sort((a, b) => a.m - b.m);

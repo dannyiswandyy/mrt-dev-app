@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#EEF1F4</color>
+    <!-- icon_bg comes from app/build.gradle: dark for MRT Tracker, orange for MRT Dev -->
+</resources>

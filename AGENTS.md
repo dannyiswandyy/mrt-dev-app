@@ -10,25 +10,21 @@ Danny works on this app with more than one AI (Claude, ChatGPT, Grok). Read this
 
 ## Where things live
 
+Everything is plain files now: nothing is packed, and the build doesn't change the page.
+
 | What | Where |
 | --- | --- |
-| The app page (all screens, map, trains, Live cam, disruptions…) | `data/mrt-dev-page.b64`, which is `index.html` gzipped, then base64 |
-| Android project (Java, manifest, build tools) | written by `.github/workflows/build-android-dev.yml` |
-| Timetable intelligence | `data/mrt-intelligence.js`, added to the page by the "Add timetable intelligence" step |
-| Tests | `tests/`, run by `timetable-check.yml` and `legacy-map-smoke-test.yml` |
+| The app page (all screens, map, trains, Live cam, disruptions…) | `android/app/src/main/assets/index.html` |
+| Timetable intelligence | `android/app/src/main/assets/mrt-intelligence.js`, loaded by the page with `<script src="mrt-intelligence.js">` (keep that tag as the page's last line) |
+| Android project (Java, manifest, Gradle, build tools) | `android/` (Java in `android/app/src/main/java/sg/mrttracker/app/`) |
+| Build | `.github/workflows/build-android-dev.yml`: copies `android/`, adds LTA's timetable and the 3D buildings, builds, publishes the **dev** release |
+| Saved LTA timetable | `data/lta-timetable.json` (the build keeps it up to date; don't edit it) |
+| App signing key | `signing/mrt-tracker.jks` (keep it, or new builds won't install over the old app) |
+| Tests | `tests/`, run by `timetable-check.yml`, `legacy-map-smoke-test.yml` and `rules-check.yml` |
 
-## Changing the app page
+## Changing the app
 
-Edit the page itself. Don't add new steps to the workflow that patch `index.html` during the build (find-and-replace, extra `<script>` blocks before `</body>`, cards that rebuild themselves). Patches like that break whenever the page changes, fight each other, and are hard to undo. A few older patch steps are still in the workflow: leave them alone unless Danny asks you to change them.
-
-Unpack, edit, pack:
-
-```bash
-base64 -d data/mrt-dev-page.b64 | gunzip > /tmp/index.html
-# edit /tmp/index.html
-gzip -9 -n -c /tmp/index.html | base64 -w0 > data/mrt-dev-page.b64
-base64 -d data/mrt-dev-page.b64 | gunzip | cmp - /tmp/index.html   # must print nothing
-```
+Edit the files in `android/` directly. Don't add steps to the workflow that change `index.html` during the build (find-and-replace, extra `<script>` blocks, cards that rebuild themselves), and don't add diagnostic steps that print parts of the page: read the file in the repository instead. The **Rules check** goes red if a build step touches the page.
 
 Things to know about the page:
 
@@ -38,16 +34,12 @@ Things to know about the page:
 
 ## Before you push
 
-1. Check the script has no syntax errors, for example by pulling the `<script>` out of the page and running `node --check` on it.
-2. Run the timetable tests:
-   ```bash
-   MRT_INDEX=/tmp/index.html node --test tests/timetable.test.mjs
-   ```
-3. If you changed the workflow, check it's still valid YAML and under 480 KB. GitHub refuses workflow files of 500 KB or more.
+1. Run the rules check: `python3 tests/rules_check.py`. It checks the page's scripts and `mrt-intelligence.js` for syntax errors, that the page still has `lineCuts` / `cutTrain` and `CAM_ANGLES`, that every Python script inside the workflows runs, and that workflow files are valid YAML and under 480 KB.
+2. Run the timetable tests: `node --test tests/timetable.test.mjs`.
 
 ## After you push
 
-- A push that changes `build-android-dev.yml` starts a build by itself. A push that only changes `data/` doesn't, so start one from **Actions → Build MRT Dev app → Run workflow**.
+- A push that changes anything in `android/` or `build-android-dev.yml` starts a build by itself. Check **Rules check**, **Timetable checks** and **Legacy map smoke test** are green too.
 - Wait for the build to finish and check that the **dev** release shows the new version (`MRT Dev YYYY.MM.DD-HHMM-dev`) before telling Danny it's ready.
 
 ## Commit messages

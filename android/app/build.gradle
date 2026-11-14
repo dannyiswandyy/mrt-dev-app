@@ -1,0 +1,79 @@
+
+plugins {
+    id 'com.android.application'
+}
+
+// Which app to build: "beta" is MRT Tracker; "dev" is MRT Tracker, a separate app (its own name, icon
+// and settings) for trying new features before they go into MRT Tracker. Set by the workflow file.
+def channel = (project.findProperty('channel') ?: 'beta').toString() == 'dev' ? 'dev' : 'beta'
+
+// Scrambles a key with a mask made from the app's package name; the app unscrambles it in memory.
+def scrambleKey = { String s ->
+    s = (s ?: '').trim()
+    if (s.isEmpty()) return ''
+    byte[] mask = java.security.MessageDigest.getInstance('SHA-256').digest('sg.mrttracker.app'.getBytes('UTF-8'))
+    byte[] b = s.getBytes('UTF-8')
+    StringBuilder sb = new StringBuilder()
+    for (int i = 0; i < b.length; i++) sb.append(String.format('%02x', (b[i] ^ mask[i % mask.length]) & 0xff))
+    return sb.toString()
+}
+
+android {
+    namespace 'sg.mrttracker.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId channel == 'dev' ? 'sg.mrttracker.app.dev' : 'sg.mrttracker.app'
+        resValue 'string', 'app_name', channel == 'dev' ? 'MRT Dev' : 'MRT Tracker'
+        resValue 'color', 'icon_bg', channel == 'dev' ? '#C2410C' : '#14181D'
+        buildConfigField 'String', 'CHANNEL', '"' + channel + '"'
+        minSdk 24
+        targetSdk 34
+        // GitHub passes in a number that grows with every build (minutes since 2026), so each
+        // new build installs over the last one, and the build date and time as the version name.
+        versionCode Integer.parseInt((project.findProperty('vc') ?: '1').toString())
+        versionName((project.findProperty('vn') ?: 'dev').toString())
+        // LTA DataMall key built into the app, so live alerts work for everyone with no setup.
+        // Stored scrambled (the app unscrambles it in memory), so it can't be read from this file
+        // or found by searching the app's contents.
+        // Public GitHub repo the app checks for updates, e.g. yourname/mrt-tracker-releases (empty = off).
+        buildConfigField 'String', 'UPDATE_REPO', '"' + (project.findProperty('updateRepo') ?: '').toString().replaceAll('[^A-Za-z0-9._/-]', '') + '"'
+        buildConfigField 'String', 'LTA_KEY_X', '"ac482e340c45fb8ce3d416f40eeba0afa7c59acac8579667"'
+        // OpenAI API key for the Ask tab (ChatGPT), from the OPENAI_API_KEY GitHub secret (none = built-in answers only).
+        buildConfigField 'String', 'AI_KEY_X', '"' + scrambleKey((project.findProperty('aiKey') ?: '').toString()) + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+        resValues true
+    }
+
+    dependencies {
+        implementation "androidx.webkit:webkit:1.18.0"
+    }
+
+    signingConfigs {
+        release {
+            // The keystore is created once by the GitHub build and kept in the repo,
+            // so every later build is signed with the same key.
+            storeFile file(project.findProperty('ks') ?: 'missing.jks')
+            storePassword 'mrttracker'
+            keyAlias 'mrttracker'
+            keyPassword 'mrttracker'
+        }
+    }
+
+    buildTypes {
+        release {
+            // Shrink and scramble the app's code so it's harder to pick apart.
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

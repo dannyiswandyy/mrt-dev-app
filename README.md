@@ -2,7 +2,7 @@
 
 Private Android app for Danny's own testing. It is separate from the public MRT Tracker: `applicationId` `sg.mrttracker.app.dev`, shown on the phone as **MRT Dev**.
 
-`.github/workflows/build-android-dev.yml` is the whole project. On each run, GitHub Actions writes the Android project, builds `mrt-dev.apk`, and publishes it as the **dev** pre-release in this repository. The workflow runs when that file is pushed, or from **Actions → Run workflow**.
+The Android project is in `android/` (the app page is `android/app/src/main/assets/index.html`). `.github/workflows/build-android-dev.yml` builds `mrt-dev.apk` from it and publishes it as the **dev** pre-release in this repository. It runs when `android/` or the workflow changes, or from **Actions → Run workflow**.
 
 ## What it's for
 
@@ -37,7 +37,7 @@ The public MRT Tracker app and website use the same counts.
 
 ## Timetable checks
 
-`.github/workflows/timetable-check.yml` runs on every push and pull request. It unpacks the app page stored in `build-android-dev.yml` and, with plain Node, checks the trains in service and the headway for each line (North-South, East-West including the Changi Airport branch, North East, Circle, Downtown, and Thomson-East Coast), each day type (weekday, Saturday, Sunday, public holiday, and holiday eve), and each time band. It does not build or publish an apk. The Downtown Line still uses its usual gaps: 2.5 minutes in the weekday peaks, 4.5 minutes off-peak, and 7 minutes late.
+`.github/workflows/timetable-check.yml` runs on every push and pull request. It reads the app page (`android/app/src/main/assets/index.html`) and, with plain Node, checks the trains in service and the headway for each line (North-South, East-West including the Changi Airport branch, North East, Circle, Downtown, and Thomson-East Coast), each day type (weekday, Saturday, Sunday, public holiday, and holiday eve), and each time band. It does not build or publish an apk. The Downtown Line still uses its usual gaps: 2.5 minutes in the weekday peaks, 4.5 minutes off-peak, and 7 minutes late.
 
 ## Actions secrets
 

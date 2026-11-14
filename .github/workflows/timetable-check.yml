@@ -1,4 +1,4 @@
-# Checks the trains-in-service and headway figures packed into the dev app page.
+# Checks the trains-in-service and headway figures in the dev app page (android/app/src/main/assets/index.html).
 # It does not build an apk and it does not publish anything.
 name: Timetable checks
 
@@ -19,18 +19,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Extract the app page
-        run: |
-          python3 - << 'PY'
-          import base64, gzip, pathlib, os
-          raw = pathlib.Path("data/mrt-dev-page.b64").read_text()
-          html = gzip.decompress(base64.b64decode(raw))
-          out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "index.html"
-          out.write_bytes(html)
-          with pathlib.Path(os.environ["GITHUB_ENV"]).open("a") as env:
-              env.write(f"MRT_INDEX={out}\n")
-          print(f"Extracted {len(html)} bytes")
-          PY
-
       - name: Check trains in service and headways
+        env:
+          MRT_INDEX: android/app/src/main/assets/index.html
         run: node --test tests/timetable.test.mjs

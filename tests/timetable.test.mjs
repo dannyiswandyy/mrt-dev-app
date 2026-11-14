@@ -3,8 +3,8 @@ import test from "node:test";
 import { loadTimetable } from "./load-timetable.mjs";
 import expected from "./expected-timetable.json" with { type: "json" };
 
-const htmlPath = process.env.MRT_INDEX;
-if (!htmlPath) throw new Error("Set MRT_INDEX to the extracted app page (index.html).");
+// The app page; MRT_INDEX can point at another copy.
+const htmlPath = process.env.MRT_INDEX || new URL("../android/app/src/main/assets/index.html", import.meta.url).pathname;
 
 const tt = loadTimetable(htmlPath);
 const LINES = ["NSL", "EWL", "CG", "NEL", "CCL", "DTL", "TEL"];

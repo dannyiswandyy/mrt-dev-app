@@ -1,0 +1,25 @@
+# Checks the rules in AGENTS.md on every push, so a change that breaks one shows a red cross.
+# It doesn't build or publish anything.
+name: Rules check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check the AGENTS.md rules
+        run: |
+          python3 -c "import yaml" 2>/dev/null || python3 -m pip install --quiet --break-system-packages pyyaml
+          python3 tests/rules_check.py

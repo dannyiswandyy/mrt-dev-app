@@ -16,16 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract embedded app page
+      - name: Check the app page
         run: |
           python3 - <<'PY'
-          import base64, gzip, pathlib
-          raw = pathlib.Path("data/mrt-dev-page.b64").read_text()
-          html = gzip.decompress(base64.b64decode(raw)).decode("utf-8")
-          pathlib.Path("/tmp/index.html").write_text(html)
-          print(f"Extracted index.html: {len(html):,} bytes")
+          import pathlib
+          html = pathlib.Path("android/app/src/main/assets/index.html").read_text(encoding="utf-8")
+          print(f"index.html: {len(html):,} bytes")
           if len(html) < 100_000:
-              raise SystemExit("Extracted app page is unexpectedly small; possible accidental rebuild/truncation.")
+              raise SystemExit("The app page is unexpectedly small; possible accidental rebuild/truncation.")
 
           required = {
               "Map tab": "Map",
@@ -44,16 +42,3 @@ jobs:
           # The feature checks above are the compatibility contract.
           print("Legacy map smoke test passed.")
           PY
-
-      - name: Check workflow compression stays consistent
-        run: |
-          if grep -q "xz -d" .github/workflows/build-android-dev.yml; then
-            echo "ERROR: build workflow uses XZ but the embedded page is gzip."
-            exit 1
-          fi
-          if grep -q "lzma" .github/workflows/build-android-dev.yml; then
-            echo "ERROR: build workflow contains stale LZMA extraction logic."
-            exit 1
-          fi
-          grep -q "gunzip" .github/workflows/build-android-dev.yml
-          echo "Compression format check passed."

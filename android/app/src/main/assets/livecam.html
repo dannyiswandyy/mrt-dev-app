@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Live cam</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#player,iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+/* The Live cam tab's video player. The app serves this page at https://sg.mrttracker.app/livecam.html
+   (it never comes from the internet), so YouTube can tell which app is showing its video. It plays one
+   video (?v=) or a channel's live stream (?c=), tells the tracker page what the player is doing, and
+   takes "mute", "unmute" and "play" from it. */
+(function(){
+  var q = new URLSearchParams(location.search), v = q.get("v") || "", c = q.get("c") || "";
+  if (!/^[A-Za-z0-9_-]{11}$/.test(v)) v = "";
+  if (!/^UC[A-Za-z0-9_-]{22}$/.test(c)) c = "";
+  var muted = q.get("mute") !== "0", player = null;
+  function tell(m){ m.mrtcam = 1; try { parent.postMessage(m, "*"); } catch(e){} }
+  if (!v && !c){ tell({error: "none"}); return; }
+  window.onYouTubeIframeAPIReady = function(){
+    var vars = {autoplay: 1, mute: muted ? 1 : 0, playsinline: 1, rel: 0, origin: location.origin, widget_referrer: location.href};
+    if (!v) vars.channel = c;
+    player = new YT.Player("player", {
+      host: v ? "https://www.youtube-nocookie.com" : "https://www.youtube.com",
+      videoId: v || "live_stream",
+      playerVars: vars,
+      events: {
+        onReady: function(e){ if (muted) e.target.mute(); e.target.playVideo(); tell({ready: 1}); },
+        onStateChange: function(e){ tell({state: e.data}); },
+        onError: function(e){ tell({error: e.data}); }
+      }
+    });
+  };
+  window.addEventListener("message", function(e){
+    if (e.source !== parent || !player || !e.data || !e.data.mrtcam) return;
+    try {
+      if (e.data.cmd === "mute") player.mute();
+      else if (e.data.cmd === "unmute"){ player.unMute(); player.setVolume(100); player.playVideo(); }
+      else if (e.data.cmd === "play") player.playVideo();
+    } catch(err){}
+  });
+  var s = document.createElement("script");
+  s.src = "https://www.youtube.com/iframe_api";
+  s.onerror = function(){ tell({error: "api"}); };
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>

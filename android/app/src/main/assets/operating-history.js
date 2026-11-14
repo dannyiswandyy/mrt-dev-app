@@ -78,6 +78,11 @@ window.mrtHistoryObserve=observe;
 window.mrtOperatingHistory=(line,slot,iso)=>summarise(line,slot,iso);
 window.mrtOperatingHistoryLatest=latest;
 window.mrtOperatingHistoryExplain=explain;
+window.mrtOperatingHistoryHTML=(line,slot,iso)=>{
+ const s=summarise(line,slot,iso); if(!s.observations) return "";
+ const last=s.runs[s.runs.length-1], runs=s.runs.length, stations=s.stations.slice(-5).join(" → ");
+ return `<p class="hint" style="margin:0"><b>App operating history</b> · ${runs} observed run${runs===1?"":"s"} · ${s.stations.length} station${s.stations.length===1?"":"s"} tracked${last&&last.turn?" · terminal turnback observed":""}${stations?`<br><span class="muted">${stations}</span>`:""}</p>`;
+};
 window.mrtOperatingHistorySnapshot=()=>state.events.slice(-MAX);
 window.mrtOperatingHistoryClear=()=>{state={day:sgDay(nowMs()),events:[],last:{}};save();};
 })();

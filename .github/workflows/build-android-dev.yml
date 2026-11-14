@@ -56,6 +56,8 @@ jobs:
       # Downloads LTA's official train timetable and packs it into the app.
       # Never fails the build: without it, the app falls back to estimated times.
       - name: Fetch LTA train timetable
+        env:
+          LTA_ACCOUNT_KEY: ${{ secrets.LTA_ACCOUNT_KEY }}
         run: python3 mrt-tracker-app/tools/build_timetable.py mrt-tracker-app data/lta-timetable.json
 
       # The last good timetable is kept in this repository (data/lta-timetable.json), so a build

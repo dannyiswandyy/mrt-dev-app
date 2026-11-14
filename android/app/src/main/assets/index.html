@@ -1887,6 +1887,21 @@ function serviceSpan(code, day){
   return n < 2 || !isFinite(lo) ? [FIRST, LAST] : [lo, hi];
 }
 
+/* Estimated trains (no LTA timetable): which run each train does next, the same idea as ttLinks().
+   A train that gets to the end of the line goes back on the first run leaving there the other way. */
+const estLinkCache = {};
+function estLinks(code, day, n){
+  const k = code + day + n; if (estLinkCache[k]) return estLinkCache[k];
+  const L = LINES[code], stay = L.shuttle ? L.shuttle.turn : 0, next = new Map(), taken = new Set();
+  const runs = [0, 1].map(dir => { const T = legsOf(code, dir, n);
+    return runsFor(code, day, dir).map(r => ({dir, r, end: dir ? (n-1) - r.b : r.b, start: dir ? (n-1) - r.a : r.a,
+      gone: r.t + T.off[r.b] + stay, shows: r.t + (r.a ? T.off[r.a] - L.dwell : 0)})); });
+  for (const x of runs[0].concat(runs[1]).sort((a, b) => a.gone - b.gone)){
+    const y = runs[1 - x.dir].find(c => !taken.has(c) && c.start === x.end && c.shows >= x.gone - 0.5 && c.shows - x.gone <= TT_LAYOVER_MAX / 60);
+    if (y){ taken.add(y); next.set(code + x.dir + x.r.t, y); }
+  }
+  return estLinkCache[k] = next;
+}
 function trainsOnRaw(code, now, noReports){
   const ttl = ttTrips(code, now.iso);
   // trains a spotter reported that the app wasn't showing, on top of the usual ones
@@ -1899,6 +1914,18 @@ function trainsOnRaw(code, now, noReports){
     for (const r of runsFor(code, dayOf(now), dir)){
       const late = late0 + (mv ? mv.get(code + dir + r.t) || 0 : 0);
       const dep = r.t, e = now.mins - late - dep, e0 = r.a ? T.off[r.a] - L.dwell : 0, trip = T.off[r.b];
+      if (e > trip + stay && e < trip + stay + TT_LAYOVER_MAX / 60){
+        // its run is over: it waits at the end, facing the other way, until its next run sets off (that run's id from now on)
+        const y = estLinks(code, dayOf(now), n).get(code + dir + dep);
+        if (y){
+          const late2 = camAdj(code, y.dir) + (mv ? mv.get(code + y.dir + y.r.t) || 0 : 0);
+          if (now.mins - late2 < y.shows){
+            const T2 = legsOf(code, y.dir, n);
+            out.push({id: code + y.dir + y.r.t, prev: code + dir + dep, dir: y.dir, dep: y.r.t, a: y.r.a, b: y.r.b, to: y.dir ? (n-1) - y.r.b : y.r.b,
+              idx: y.start, next: y.start, eta: Math.max(0, y.r.t + late2 + T2.off[y.r.a] - now.mins), atStation: true, layover: true});
+          }
+        }
+      }
       if (e < e0 || e > trip + stay) continue;
       const {seg, within, pos} = legAt(T, Math.min(e, trip), r.b);
       const j = seg + 1;                                            // next stop, counted from where trains in this direction start
@@ -2094,18 +2121,71 @@ function ttState(r, sec){
   const frac = (e - p.dep[k]) / Math.max(1, p.arr[k + 1] - p.dep[k]);
   return {idx: p.f + p.d * (k + frac), k, at: false};
 }
+/* Which run each train does next. A train that reaches the end of its run waits there and then runs back
+   (or on round the loop), so its next run starts at the station where this one ends, a few minutes later.
+   On lines whose LTA trip IDs carry a train slot (…_<slot>_<run>), the next run is the same slot's next one;
+   the LRT's IDs carry none, so there it's the first run leaving that station after the train gets in.
+   Gives {next: Map(run → its next run), prev: Map(run → the run before it)}, worked out once per day's list. */
+const TT_LAYOVER_MAX = 15 * 60;            // a longer wait than this: the train goes off to the depot instead
+const TT_LAYOVER_EARLY = 6 * 60;           // the next run can start a little before this one gets in (slower trains, see SLOW)
+function ttSlotOf(tid){
+  const q = String(tid || "").split("_"), n = q.length;
+  return n >= 4 && /^\d+$/.test(q[n - 1]) && /^\d+$/.test(q[n - 2]) ? String(+q[n - 2]) : "";
+}
+function ttLinks(list){
+  if (list.links) return list.links;
+  const next = new Map(), prev = new Map(), st = list.code && LINES[list.code] ? LINES[list.code].stations : null;
+  // the same station: on the Circle Line a run carried on round to Promenade ends at the second Promenade in the list
+  const nm = i => st && st[i] ? st[i][1] : i, endAt = r => nm(r.p.f + r.p.d * (r.p.arr.length - 1)), gets = r => r.s + r.p.end;
+  const slotted = list.some(r => ttSlotOf(r.tid));
+  if (slotted){
+    const by = new Map();
+    for (const r of list){ const s = ttSlotOf(r.tid); if (!s) continue; if (!by.has(s)) by.set(s, []); by.get(s).push(r); }
+    for (const runs of by.values()){
+      runs.sort((a, b) => a.s - b.s);
+      for (let i = 0; i + 1 < runs.length; i++){
+        const a = runs[i], b = runs[i + 1], w = b.s - gets(a);
+        if (nm(b.p.f) === endAt(a) && w >= -TT_LAYOVER_EARLY && w <= TT_LAYOVER_MAX && !prev.has(b)){ next.set(a, b); prev.set(b, a); }
+      }
+    }
+  } else {
+    const from = new Map();                                  // runs by the station they start from, in time order
+    for (const r of list){ const k = nm(r.p.f); if (!from.has(k)) from.set(k, []); from.get(k).push(r); }
+    for (const a of [...list].sort((x, y) => gets(x) - gets(y))){
+      const t = gets(a), b = (from.get(endAt(a)) || []).find(r => r !== a && !prev.has(r) && r.s >= t && r.s - t <= TT_LAYOVER_MAX);
+      if (b){ next.set(a, b); prev.set(b, a); }
+    }
+  }
+  return list.links = {next, prev};
+}
 function ttTrainsOn(code, now, list){
   const late = [camAdj(code, 0) * 60, camAdj(code, 1) * 60], mv = moved(code, now.iso), out = [];
   const early = mv ? Math.min(0, ...mv.values()) * 60 : 0, last = now.mins * 60 - Math.min(late[0], late[1]) - early;
+  const links = ttLinks(list), runId = r => `${code}t${r.s}p${r.pi}`;
+  const secOf = r => now.mins * 60 - late[r.p.d > 0 ? 0 : 1] - (mv ? (mv.get(runId(r)) || 0) * 60 : 0);
   for (const r of list){
     if (r.s > last) break;
-    const sec = now.mins * 60 - late[r.p.d > 0 ? 0 : 1] - (mv ? (mv.get(`${code}t${r.s}p${r.pi}`) || 0) * 60 : 0);
-    const st = ttState(r, sec); if (!st) continue;
+    const sec = secOf(r), st = ttState(r, sec), pr = links.prev.get(r);
+    if (!st){
+      // the run is over: if the same train does another run from here, it stays at the platform, now facing
+      // the way it'll go next, until that run leaves (then that run's own entry below takes over, same id)
+      const b = sec > r.s ? links.next.get(r) : null;
+      if (b){
+        const bs = secOf(b);
+        if (bs < b.s) out.push({id: runId(b), prev: runId(r), dir: b.p.d > 0 ? 0 : 1, dep: b.s / 60, ref: b, idx: b.p.f, to: b.p.to,
+          next: b.p.f, eta: Math.max(0, (b.s - bs) / 60), atStation: true, layover: true});
+      }
+      continue;
+    }
     const p = r.p, nk = st.at ? st.k : st.k + 1;
-    out.push({id: `${code}t${r.s}p${r.pi}`, dir: p.d > 0 ? 0 : 1, dep: r.s / 60, ref: r, idx: st.idx, to: p.to,
+    out.push({id: runId(r), prev: pr ? runId(pr) : undefined, dir: p.d > 0 ? 0 : 1, dep: r.s / 60, ref: r, idx: st.idx, to: p.to,
       next: p.f + p.d * nk, eta: Math.max(0, (r.s + p.arr[nk] - sec) / 60), atStation: st.at});
   }
   return out;
+}
+/* A train by its id, following it on to its next run when it has turned round at the end of the line. */
+function trainById(list, id){
+  return list.find(t => t.id === id) || list.find(t => t.prev === id) || null;
 }
 function ttNext(list, s, dir, now, count, reach){
   const sec = now.mins * 60 - camAdj(list.code, dir) * 60, res = [], mv = moved(list.code, now.iso);
@@ -2441,7 +2521,8 @@ function tick(){
     el.classList.toggle("sel", tr.id === selTrain);
     el.classList.toggle("seen", !!(window.repSeen && repSeen(tr.id)));
   }
-  const s = running.find(tr => tr.id === selTrain);
+  const s = selTrain ? trainById(running, selTrain) : null;
+  if (s && s.id !== selTrain){ selTrain = s.id; if (trainEls[s.id]) trainEls[s.id].classList.add("sel"); }   // it turned round: still the same train
   if (!s){
     if (selTrain) selTrain = null;
     setHTML($("trainInfo"), `<p class="hint">${running.length ? "Tap a train to see where it's heading." : "No trains running right now."}</p>`);
@@ -3595,7 +3676,8 @@ function mapDraw(){
       const nx = uy, ny = -ux, side = lw * 0.55 + tr * 0.6;      // trains in Singapore keep left, so each arrow sits on the left of the line as it travels
       const X = sx(x) + nx * side, Y = sy(y) + ny * side;
       if (X < -20 || X > mW + 20 || Y < -20 || Y > mH + 20) continue;
-      const sel = mSel && mSel.type === "train" && mSel.id === t.id, k = sel ? 1.5 : 1;
+      const sel = mSel && mSel.type === "train" && mSel.line === c && (mSel.id === t.id || mSel.id === t.prev), k = sel ? 1.5 : 1;
+      if (sel && mSel.id !== t.id) mSel.id = t.id;               // it turned round at the end of the line: keep it selected
       ctx.beginPath();
       ctx.moveTo(X + ux * tr * 1.5 * k, Y + uy * tr * 1.5 * k);
       ctx.lineTo(X - ux * tr * 0.9 * k + nx * tr * k, Y - uy * tr * 0.9 * k + ny * tr * k);
@@ -3689,8 +3771,9 @@ function mapInfoHTML(){
   const now = sgNow();
   if (!mSel) return `<p class="hint" style="margin:0">Tap any train or station on the map · Pinch or scroll to zoom.</p>`;
   if (mSel.type === "train"){
-    const L = LINES[mSel.line], t = trainsOn(mSel.line, now).find(x => x.id === mSel.id);
+    const L = LINES[mSel.line], t = trainById(trainsOn(mSel.line, now), mSel.id);
     if (!t){ mSel = null; return mapInfoHTML(); }
+    mSel.id = t.id;                                          // it turned round: keep following the same train
     const act = activeStations(L, now.iso), stop = act[t.next][1];
     return `<div class="mi-h"><span class="code" style="background:var(--${mSel.line})">${mSel.line === "CG" ? "CGL" : mSel.line}</span><b>${esc(trainToW(destOf(L, t.dir, act, t.to)))}</b>${isLastTrain(mSel.line, t, now) ? `<span class="sb last">last train</span>` : ""}${!L.bound && isShortTo(L, t.dir, act, t.to) ? `<span class="sb">special-bound</span>` : ""}${window.repTag ? repTag(t) : ""}<button class="mi-x" type="button" data-act="close" aria-label="Close">×</button></div>
       <div class="mi-row"><span>${t.atStation ? `Now at <b>${esc(stop)}</b>` : `Next stop <b>${esc(stop)}</b>`}</span><span class="mi-t">${t.atStation ? "Boarding" : t.eta < 0.5 ? "Arriving" : "~" + Math.max(1, Math.round(t.eta)) + " min"}</span></div>${window.repWhen && repWhen(t) ? `<div class="mi-row"><span>${repWhen(t)}</span></div>` : ""}
@@ -8641,7 +8724,8 @@ const RT = {f: {from: "", to: "", fare: "adult"}, route: null, view: false, t0: 
   }
   function trainNow(x){
     const now = sgNow(), L = LINES[x.line]; if (!L) return null;
-    const t = trainsOn(x.line, now).find(y => y.id === x.id); if (!t) return null;
+    const t = trainById(trainsOn(x.line, now), x.id); if (!t) return null;
+    x.id = t.id;                                             // it turned round at the end of the line: same train, next run
     const act = activeStations(L, now.iso);
     return {now, L, t, act, stop: act[t.next] ? act[t.next][1] : "", to: destOf(L, t.dir, act, t.to), full: dest(L, t.dir, act), sb: isShortTo(L, t.dir, act, t.to)};
   }
